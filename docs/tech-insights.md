@@ -88,7 +88,7 @@ techInsights:
       jevReadinessEvidence:
         type: json-rules-engine
         name: Jev readiness evidence
-        description: Requires an evaluated readiness result.
+        description: Marks the evidence check true only when a readiness result was evaluated and passed.
         factIds: [jevTechInsightsFactRetriever]
         rule:
           conditions:
@@ -100,6 +100,11 @@ techInsights:
                 operator: equal
                 value: pass
 ```
+
+This boolean check is an evidence condition; it is not a health score. A
+consumer that aggregates service health should exclude facts whose
+`evaluationStatus` is `not-evaluated` or `error` instead of treating the
+condition's false result as a service failure.
 
 If a source cannot be read, inspect the retriever logs and the latest fact's
 `fetchStatus` and `errorCode`. If Jev rejects or times out, the fact records an

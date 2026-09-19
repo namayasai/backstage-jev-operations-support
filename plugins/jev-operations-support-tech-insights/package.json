@@ -10,7 +10,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "config.d.ts"
   ],
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -33,7 +34,9 @@
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
     "test": "vitest run src/*.test.ts"
   },
+  "configSchema": "config.d.ts",
   "dependencies": {
+    "@backstage-community/plugin-tech-insights-common": "^0.11.0",
     "@namayasai/backstage-plugin-jev-operations-support-backend": "0.2.0",
     "@namayasai/backstage-plugin-jev-operations-support-common": "0.2.0",
     "@backstage-community/plugin-tech-insights-node": "^2.9.0",
