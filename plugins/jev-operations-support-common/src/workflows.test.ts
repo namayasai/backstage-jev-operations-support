@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildEvaluation, evaluationRequestSchema, validateResponse, summarize, demoEvaluation, sampleText, sampleCandidates, workflowIds, type EvaluationRequest, type JevResponse } from './index';
+import { buildEvaluation, evaluationRequestSchema, evaluationRequestByteLength, MAX_EVALUATION_BYTES, validateResponse, summarize, demoEvaluation, sampleText, sampleCandidates, workflowIds, type EvaluationRequest, type JevResponse } from './index';
 
 function input(workflow: EvaluationRequest['workflow']): EvaluationRequest { return { workflow, text: sampleText[workflow], candidates: ['templates', 'ownership', 'search'].includes(workflow) ? sampleCandidates : [] }; }
 describe('workflow contracts', () => {
@@ -18,6 +18,11 @@ describe('workflow contracts', () => {
     expect(evaluationRequestSchema.safeParse({ ...input('readiness'), apiKey: 'not-allowed' }).success).toBe(false);
     expect(evaluationRequestSchema.safeParse({ ...input('readiness'), text: '          ' }).success).toBe(false);
   });
+  it('exposes the exact UTF-8 request budget used by validation', () => {
+    const value = input('readiness');
+    expect(evaluationRequestByteLength(value)).toBeLessThanOrEqual(MAX_EVALUATION_BYTES);
+    expect(evaluationRequestByteLength({ ...value, text: '語'.repeat(9000) })).toBeGreaterThan(MAX_EVALUATION_BYTES);
+  });
   it('includes a no-match option when selecting from closed candidates', () => {
     const { request } = buildEvaluation(input('ownership'));
     expect(request.questions.recommendation.type).toBe('choice');
@@ -34,6 +39,14 @@ describe('workflow contracts', () => {
     const value = input('change-risk'); const { checks } = buildEvaluation(value);
     const response: JevResponse = { model: 'test', answers: Object.fromEntries(checks.map(c => [c.id, { type: 'noul', noul: 0.95 }])) };
     expect(summarize(value, response, checks).findings.map(f => f.status)).toEqual(['attention', 'attention', 'attention', 'pass']);
+  });
+  it('keeps low risk probabilities in review because missing evidence is not safety', () => {
+    const value = input('change-risk'); const { checks } = buildEvaluation(value);
+    const response: JevResponse = { model: 'test', answers: Object.fromEntries(checks.map(c => [c.id, { type: 'noul', noul: c.id === 'rollback' ? 0.95 : 0.05 }])) };
+    const result = summarize(value, response, checks);
+    expect(result.findings.map(f => f.status)).toEqual(['review', 'review', 'review', 'pass']);
+    expect(result.findings[0].guidance).toContain('not evidence that the change is safe');
+    expect(result.needsReview).toBe(true);
   });
   it('marks confident no-match decisions for human review', () => {
     const value = input('templates'); const { checks, request } = buildEvaluation(value);

@@ -1,0 +1,634 @@
+{
+  "testedAt": "2026-09-19T10:41:12.447Z",
+  "model": "jev-1.13.0",
+  "fixtureFile": "docs/evaluation-fixtures.json",
+  "repeat": 3,
+  "note": "Opt-in live evaluation uses synthetic fixtures with explicit expected labels. It is an evaluation aid, not a production accuracy guarantee.",
+  "summary": {
+    "fixtureRuns": 15,
+    "checks": 60,
+    "reviewCount": 21,
+    "reviewRate": 0.35,
+    "expectedComparisons": 60,
+    "expectedMatches": 57,
+    "mismatchCount": 3,
+    "errorCount": 0
+  },
+  "results": [
+    {
+      "fixture": "readiness-ja-complete",
+      "attempt": 1,
+      "elapsedMs": 556,
+      "model": "jev-1.13.0",
+      "needsReview": false,
+      "checks": [
+        {
+          "id": "startup",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.98,
+          "confidence": null
+        },
+        {
+          "id": "health",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.96,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.95,
+          "confidence": null
+        },
+        {
+          "id": "escalation",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.97,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "readiness-ja-complete",
+      "attempt": 2,
+      "elapsedMs": 213,
+      "model": "jev-1.13.0",
+      "needsReview": false,
+      "checks": [
+        {
+          "id": "startup",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.97,
+          "confidence": null
+        },
+        {
+          "id": "health",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.96,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.95,
+          "confidence": null
+        },
+        {
+          "id": "escalation",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.97,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "readiness-ja-complete",
+      "attempt": 3,
+      "elapsedMs": 205,
+      "model": "jev-1.13.0",
+      "needsReview": false,
+      "checks": [
+        {
+          "id": "startup",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.98,
+          "confidence": null
+        },
+        {
+          "id": "health",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.96,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.95,
+          "confidence": null
+        },
+        {
+          "id": "escalation",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.97,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "change-risk-mixed",
+      "attempt": 1,
+      "elapsedMs": 198,
+      "model": "jev-1.13.0",
+      "needsReview": true,
+      "checks": [
+        {
+          "id": "breaking",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.97,
+          "confidence": null
+        },
+        {
+          "id": "migration",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.96,
+          "confidence": null
+        },
+        {
+          "id": "access",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.97,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.96,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "change-risk-mixed",
+      "attempt": 2,
+      "elapsedMs": 211,
+      "model": "jev-1.13.0",
+      "needsReview": true,
+      "checks": [
+        {
+          "id": "breaking",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.97,
+          "confidence": null
+        },
+        {
+          "id": "migration",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.97,
+          "confidence": null
+        },
+        {
+          "id": "access",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.96,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.96,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "change-risk-mixed",
+      "attempt": 3,
+      "elapsedMs": 221,
+      "model": "jev-1.13.0",
+      "needsReview": true,
+      "checks": [
+        {
+          "id": "breaking",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.97,
+          "confidence": null
+        },
+        {
+          "id": "migration",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.97,
+          "confidence": null
+        },
+        {
+          "id": "access",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.97,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "pass",
+          "expectedStatus": "pass",
+          "match": true,
+          "value": 0.96,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "change-risk-negation",
+      "attempt": 1,
+      "elapsedMs": 222,
+      "model": "jev-1.13.0",
+      "needsReview": true,
+      "checks": [
+        {
+          "id": "breaking",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.03,
+          "confidence": null
+        },
+        {
+          "id": "migration",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.05,
+          "confidence": null
+        },
+        {
+          "id": "access",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.05,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.17,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "change-risk-negation",
+      "attempt": 2,
+      "elapsedMs": 234,
+      "model": "jev-1.13.0",
+      "needsReview": true,
+      "checks": [
+        {
+          "id": "breaking",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.03,
+          "confidence": null
+        },
+        {
+          "id": "migration",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.05,
+          "confidence": null
+        },
+        {
+          "id": "access",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.04,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.18,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "change-risk-negation",
+      "attempt": 3,
+      "elapsedMs": 272,
+      "model": "jev-1.13.0",
+      "needsReview": true,
+      "checks": [
+        {
+          "id": "breaking",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.03,
+          "confidence": null
+        },
+        {
+          "id": "migration",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.05,
+          "confidence": null
+        },
+        {
+          "id": "access",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.04,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.18,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "change-risk-implicit",
+      "attempt": 1,
+      "elapsedMs": 226,
+      "model": "jev-1.13.0",
+      "needsReview": true,
+      "checks": [
+        {
+          "id": "breaking",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.05,
+          "confidence": null
+        },
+        {
+          "id": "migration",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.13,
+          "confidence": null
+        },
+        {
+          "id": "access",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.1,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "review",
+          "expectedStatus": "attention",
+          "match": false,
+          "value": 0.33,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "change-risk-implicit",
+      "attempt": 2,
+      "elapsedMs": 189,
+      "model": "jev-1.13.0",
+      "needsReview": true,
+      "checks": [
+        {
+          "id": "breaking",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.05,
+          "confidence": null
+        },
+        {
+          "id": "migration",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.12,
+          "confidence": null
+        },
+        {
+          "id": "access",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.1,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "review",
+          "expectedStatus": "attention",
+          "match": false,
+          "value": 0.32,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "change-risk-implicit",
+      "attempt": 3,
+      "elapsedMs": 226,
+      "model": "jev-1.13.0",
+      "needsReview": true,
+      "checks": [
+        {
+          "id": "breaking",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.05,
+          "confidence": null
+        },
+        {
+          "id": "migration",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.14,
+          "confidence": null
+        },
+        {
+          "id": "access",
+          "status": "review",
+          "expectedStatus": "review",
+          "match": true,
+          "value": 0.09,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "review",
+          "expectedStatus": "attention",
+          "match": false,
+          "value": 0.3,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "readiness-insufficient",
+      "attempt": 1,
+      "elapsedMs": 242,
+      "model": "jev-1.13.0",
+      "needsReview": true,
+      "checks": [
+        {
+          "id": "startup",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.03,
+          "confidence": null
+        },
+        {
+          "id": "health",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.02,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.02,
+          "confidence": null
+        },
+        {
+          "id": "escalation",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.03,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "readiness-insufficient",
+      "attempt": 2,
+      "elapsedMs": 204,
+      "model": "jev-1.13.0",
+      "needsReview": true,
+      "checks": [
+        {
+          "id": "startup",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.03,
+          "confidence": null
+        },
+        {
+          "id": "health",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.02,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.02,
+          "confidence": null
+        },
+        {
+          "id": "escalation",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.03,
+          "confidence": null
+        }
+      ]
+    },
+    {
+      "fixture": "readiness-insufficient",
+      "attempt": 3,
+      "elapsedMs": 188,
+      "model": "jev-1.13.0",
+      "needsReview": true,
+      "checks": [
+        {
+          "id": "startup",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.03,
+          "confidence": null
+        },
+        {
+          "id": "health",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.03,
+          "confidence": null
+        },
+        {
+          "id": "rollback",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.02,
+          "confidence": null
+        },
+        {
+          "id": "escalation",
+          "status": "attention",
+          "expectedStatus": "attention",
+          "match": true,
+          "value": 0.03,
+          "confidence": null
+        }
+      ]
+    }
+  ]
+}

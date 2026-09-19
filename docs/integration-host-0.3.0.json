@@ -1,0 +1,359 @@
+{
+  "testedAt": "2026-09-19T12:01:27.720817+00:00",
+  "environment": "Local Backstage, guest auth, allow-all test policy, SQLite memory database.",
+  "awsTransport": "Synthetic SNS envelope injected into the real Backstage Events service. No live AWS queue or credentials were used.",
+  "checks": [
+    {
+      "name": "evaluate_requires_user",
+      "passed": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "name": "notifications_require_user",
+      "passed": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "name": "aws_alert_details_require_user",
+      "passed": true,
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "name": "catalog_name_search",
+      "passed": true,
+      "detail": {
+        "status": 200,
+        "names": [
+          "example-website"
+        ]
+      }
+    },
+    {
+      "name": "authenticated_japanese_techdocs",
+      "passed": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "registered_tech_insights_schema",
+      "passed": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "aws_fixture_delivered",
+      "passed": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "aws_auto_evaluation_persisted",
+      "passed": true,
+      "detail": {
+        "status": 200,
+        "notificationCount": 1,
+        "awsState": "ALARM",
+        "evaluationStatus": "evaluated",
+        "result": {
+          "workflow": "incident",
+          "model": "jev-1.13.0",
+          "evaluatedAt": "2026-09-19T12:01:28.272Z",
+          "mode": "live",
+          "findings": [
+            {
+              "id": "impact",
+              "title": "Reported impact",
+              "statement": "Classify the explicitly reported customer impact. Missing impact information means unknown.",
+              "kind": "choice",
+              "guidance": "Verify the reported impact against monitoring and your incident severity policy.",
+              "value": "unknown",
+              "confidence": 1,
+              "probabilities": {
+                "widespread": 0,
+                "unknown": 1,
+                "limited": 0,
+                "degraded": 0
+              },
+              "status": "review"
+            },
+            {
+              "id": "area",
+              "title": "Investigation area",
+              "statement": "Choose the first investigation area directly supported by the symptoms. This is a lead, not a root-cause finding.",
+              "kind": "choice",
+              "guidance": "Use this lead to choose an existing runbook; corroborate it with telemetry.",
+              "value": "capacity",
+              "confidence": 0.98,
+              "probabilities": {
+                "dependency": 0,
+                "unknown": 0.01,
+                "deployment": 0,
+                "access": 0,
+                "capacity": 0.99
+              },
+              "status": "attention"
+            }
+          ],
+          "needsReview": true
+        }
+      }
+    },
+    {
+      "name": "tech_insights_live_facts_stored",
+      "passed": true,
+      "detail": {
+        "status": 200,
+        "facts": {
+          "jevTechInsightsFactRetriever": {
+            "id": "jevTechInsightsFactRetriever",
+            "entity": {
+              "namespace": "default",
+              "kind": "component",
+              "name": "example-website"
+            },
+            "timestamp": "2026-09-19T21:01:18.647+09:00",
+            "version": "0.1.0",
+            "facts": {
+              "evidenceStatus": "attention",
+              "passCount": 1,
+              "reviewCount": 1,
+              "attentionCount": 2,
+              "fetchStatus": "fetched",
+              "evaluationStatus": "evaluated",
+              "checkCount": 4,
+              "evaluatedCheckCount": 4,
+              "coverage": 1,
+              "workflow": "readiness",
+              "model": "jev-1.13.0",
+              "source": "https://github.com/namayasai/backstage-jev-operations-support/blob/main/README.md",
+              "evaluatedAt": "2026-09-19T12:01:18.647Z",
+              "errorCode": ""
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "native_tech_insights_check",
+      "passed": true,
+      "detail": {
+        "status": 200,
+        "result": [
+          {
+            "facts": {
+              "evaluationStatus": {
+                "value": "evaluated",
+                "type": "string",
+                "description": "Whether Jev evaluated the fetched document, returned an error, or was not called."
+              },
+              "evidenceStatus": {
+                "value": "attention",
+                "type": "string",
+                "description": "Aggregated evidence status: pass, review, attention, or not-evaluated."
+              }
+            },
+            "result": false,
+            "check": {
+              "id": "jevReadinessEvidence",
+              "type": "json-rules-engine",
+              "name": "Jev readiness evidence",
+              "description": "Evaluated documentation evidence, not service health.",
+              "factIds": [
+                "jevTechInsightsFactRetriever"
+              ],
+              "metadata": {},
+              "rule": {
+                "conditions": {
+                  "priority": 1,
+                  "all": [
+                    {
+                      "operator": "equal",
+                      "value": "evaluated",
+                      "fact": "evaluationStatus",
+                      "factResult": "evaluated",
+                      "valueResult": "evaluated",
+                      "result": true
+                    },
+                    {
+                      "operator": "equal",
+                      "value": "pass",
+                      "fact": "evidenceStatus",
+                      "factResult": "attention",
+                      "valueResult": "pass",
+                      "result": false
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "manual_recheck_preserves_stored_automatic_result_and_aws_state",
+      "passed": true,
+      "detail": {
+        "evaluatedAt": "2026-09-19T12:01:28.272Z",
+        "awsState": "ALARM"
+      }
+    }
+  ],
+  "browserChecks": [
+    {
+      "name": "japanese_techdocs_load_preview_then_explicit_live_evaluation",
+      "passed": true,
+      "observedNoul": [
+        0.97,
+        0.97,
+        0.96,
+        0.98
+      ],
+      "model": "jev-1.13.0"
+    },
+    {
+      "name": "aws_inbox_persisted_automatic_assessment_and_manual_recheck",
+      "passed": true,
+      "automatic": {
+        "impact": "unknown",
+        "area": "capacity"
+      },
+      "manual": {
+        "impact": "unknown",
+        "area": "capacity"
+      },
+      "sourceState": "ALARM"
+    }
+  ],
+  "packagingChecks": {
+    "fiveTarballsInstalledInRealHost": true,
+    "licensesIncluded": true,
+    "awsMigrationIncluded": true,
+    "backendConfigSchemaDiscoveredByPackageName": true,
+    "apiKeyAndWebhookCredentialsVisibility": "secret",
+    "credentialScanMatches": 0
+  },
+  "githubClient": {
+    "pullRequest": "https://github.com/backstage/backstage/pull/35788",
+    "headRepository": "namayasai/backstage",
+    "headSha": "581029e4ebe421df998af03bf0cf79e17add0908",
+    "files": [
+      "microsite/data/plugins/jev-operations-support.yaml"
+    ],
+    "pinnedContentRead": true,
+    "bytes": 596
+  },
+  "githubWebhookAuthentication": [
+    {
+      "signedCorrectly": false,
+      "status": 401,
+      "body": {
+        "error": "Invalid GitHub webhook signature."
+      }
+    },
+    {
+      "signedCorrectly": true,
+      "status": 202,
+      "body": {
+        "status": "ignored",
+        "reason": "repository_not_allowed",
+        "deliveryId": "review-auth-boundary"
+      }
+    }
+  ],
+  "versions": {
+    "plugin": "0.3.0 development",
+    "backstage": "1.55.0",
+    "techdocsBackend": "2.3.0",
+    "notificationsBackend": "0.6.9",
+    "techInsightsBackend": "3.1.0",
+    "techInsightsJsonfc": "0.10.0",
+    "sqsConfigCompatibility": "0.4.26"
+  },
+  "githubWebhookLive": {
+    "pullRequest": "https://github.com/namayasai/backstage-jev-operations-support/pull/1",
+    "headSha": "aa6af3696dbf55129da1677e57555307d44f93aa",
+    "transport": "Locally signed synthetic GitHub delivery; real GitHub PR metadata/content and live Jev. No GitHub webhook registration was created.",
+    "results": [
+      {
+        "attempt": 1,
+        "http": 200,
+        "elapsedMs": 2842,
+        "response": {
+          "status": "evaluated",
+          "deliveryId": "review-pr1-aa6af3696dbf",
+          "repository": "namayasai/backstage-jev-operations-support",
+          "pullRequest": 1,
+          "documents": [
+            {
+              "path": "README.md",
+              "result": {
+                "workflow": "readiness",
+                "model": "jev-1.13.0",
+                "evaluatedAt": "2026-09-19T12:06:02.165Z",
+                "mode": "live",
+                "findings": [
+                  {
+                    "id": "startup",
+                    "title": "Startup procedure",
+                    "statement": "Does the document describe concrete commands or steps to start this service?",
+                    "kind": "noul",
+                    "guidance": "The supplied context supports this check. Verify the documented procedure works in practice.",
+                    "value": 0.98,
+                    "status": "pass"
+                  },
+                  {
+                    "id": "health",
+                    "title": "Health verification",
+                    "statement": "Does the document explain an observable check that verifies this service is healthy?",
+                    "kind": "noul",
+                    "guidance": "Document a health endpoint or an observable success condition.",
+                    "value": 0.7,
+                    "status": "review"
+                  },
+                  {
+                    "id": "rollback",
+                    "title": "Rollback procedure",
+                    "statement": "Does the document describe concrete steps to restore a previous working deployment?",
+                    "kind": "noul",
+                    "guidance": "Add rollback steps and a way to verify recovery.",
+                    "value": 0.12,
+                    "status": "attention"
+                  },
+                  {
+                    "id": "escalation",
+                    "title": "Escalation path",
+                    "statement": "Does the document identify a specific team or contact channel for operational incidents?",
+                    "kind": "noul",
+                    "guidance": "Name an escalation team and a usable contact channel.",
+                    "value": 0.09,
+                    "status": "attention"
+                  }
+                ],
+                "needsReview": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "attempt": 2,
+        "http": 200,
+        "elapsedMs": 4,
+        "response": {
+          "status": "duplicate",
+          "deliveryId": "review-pr1-aa6af3696dbf"
+        }
+      }
+    ]
+  }
+}

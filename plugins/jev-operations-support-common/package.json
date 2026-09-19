@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -21,7 +21,8 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "sideEffects": false,
   "name": "@namayasai/backstage-plugin-jev-operations-support-common",

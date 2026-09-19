@@ -18,6 +18,9 @@
     "paths": {
       "@namayasai/backstage-plugin-jev-operations-support-common": [
         "plugins/jev-operations-support-common/src/index.ts"
+      ],
+      "@namayasai/backstage-plugin-jev-operations-support-backend/client": [
+        "plugins/jev-operations-support-backend/src/client.ts"
       ]
     }
   },

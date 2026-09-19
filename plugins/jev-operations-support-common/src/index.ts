@@ -3,6 +3,7 @@ import { createPermission } from '@backstage/plugin-permission-common';
 
 export const workflowIds = ['readiness', 'templates', 'ownership', 'incident', 'change-risk', 'search'] as const;
 export type WorkflowId = typeof workflowIds[number];
+export const MAX_EVALUATION_BYTES = 24000;
 export const jevEvaluatePermission = createPermission({ name: 'jev-operations-support.evaluate', attributes: { action: 'create' } });
 
 export const candidateSchema = z.object({
@@ -24,11 +25,16 @@ export const evaluationRequestSchema = z.object({
   if (new Set(input.candidates.map(c => c.id)).size !== input.candidates.length) {
     ctx.addIssue({ code: 'custom', path: ['candidates'], message: 'Candidate IDs must be unique.' });
   }
-  if (new TextEncoder().encode(JSON.stringify(input)).length > 24000) {
+  if (evaluationRequestByteLength(input) > MAX_EVALUATION_BYTES) {
     ctx.addIssue({ code: 'custom', message: 'Context exceeds the 24 KB evaluation budget. Shortlist or shorten the input.' });
   }
 });
 export type EvaluationRequest = z.infer<typeof evaluationRequestSchema>;
+
+/** The exact UTF-8 size of the JSON request sent to the backend. */
+export function evaluationRequestByteLength(input: Pick<EvaluationRequest, 'workflow' | 'text' | 'candidates'>): number {
+  return new TextEncoder().encode(JSON.stringify(input)).length;
+}
 
 export type Question =
   | { type: 'noul'; instructions: string; criteria: { true: string; false: string } }
@@ -68,6 +74,11 @@ function noul(id: string, title: string, condition: string, guidance: string): C
 }
 function choice(id: string, title: string, instructions: string, criteria: Record<string, string>, guidance: string): Check {
   return { id, title, guidance, question: { type: 'choice', instructions: dataBoundary + instructions, criteria } };
+}
+function missingRiskGuidance(id: string): string {
+  if (id === 'breaking') return 'This compatibility concern was not established by the supplied context. That is not evidence that the change is safe; review the public API, data format, and consumer diff.';
+  if (id === 'migration') return 'This data migration concern was not established by the supplied context. That is not evidence that the change is safe; review persisted data, schema changes, migration ordering, and recovery.';
+  return 'This access-control concern was not established by the supplied context. That is not evidence that the change is safe; review authentication, authorization, and credential changes.';
 }
 
 export function buildEvaluation(input: EvaluationRequest): { request: JevRequest; checks: Check[] } {
@@ -155,8 +166,10 @@ export function summarize(input: EvaluationRequest, response: JevResponse, check
       const uncertain = answer.noul > 0.2 && answer.noul < 0.8;
       const isConcern = input.workflow === 'change-risk' && check.id !== 'rollback';
       const attention = isConcern ? answer.noul >= 0.8 : answer.noul <= 0.2;
-      return { ...base, value: answer.noul, status: uncertain ? 'review' : attention ? 'attention' : 'pass',
-        guidance: uncertain || attention ? check.guidance : isConcern ? 'This concern is not established by the supplied context. Confirm against the actual change.' : 'The supplied context supports this check. Verify the documented procedure works in practice.' };
+      const informationMissing = isConcern && !uncertain && answer.noul <= 0.2;
+      return { ...base, value: answer.noul, status: uncertain || informationMissing ? 'review' : attention ? 'attention' : 'pass',
+        guidance: informationMissing ? missingRiskGuidance(check.id)
+          : uncertain || attention ? check.guidance : 'The supplied context supports this check. Verify the documented procedure works in practice.' };
     }
     if (answer.type === 'choice') {
       const candidate = /^c\d+$/.test(answer.choice) ? input.candidates[Number(answer.choice.slice(1))] : undefined;
