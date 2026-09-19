@@ -1,0 +1,58 @@
+{
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/namayasai/backstage-jev.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "config.d.ts"
+  ],
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./alpha": {
+      "types": "./dist/alpha.d.ts",
+      "import": "./dist/alpha.mjs",
+      "require": "./dist/alpha.js"
+    }
+  },
+  "sideEffects": false,
+  "name": "@namayasai/backstage-plugin-jev",
+  "description": "Jev decision workbench and entity tab for Backstage",
+  "backstage": {
+    "role": "frontend-plugin",
+    "pluginId": "jev",
+    "pluginPackages": [
+      "@namayasai/backstage-plugin-jev",
+      "@namayasai/backstage-plugin-jev-backend",
+      "@namayasai/backstage-plugin-jev-common"
+    ]
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/alpha.tsx --format cjs,esm --dts --clean"
+  },
+  "dependencies": {
+    "@namayasai/backstage-plugin-jev-common": "0.1.0",
+    "@backstage/core-plugin-api": "^1.12.10",
+    "@backstage/frontend-plugin-api": "^0.18.1",
+    "@backstage/plugin-catalog-react": "^3.2.3",
+    "@backstage/catalog-model": "^1.10.1"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "react-router-dom": "^6.30.2"
+  }
+}

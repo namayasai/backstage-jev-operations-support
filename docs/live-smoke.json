@@ -1,0 +1,395 @@
+{
+  "testedAt": "2026-09-19T05:42:42.708Z",
+  "note": "Live API smoke tests with synthetic English inputs. This is not a quality benchmark or a Backstage host end-to-end test.",
+  "results": [
+    {
+      "name": "readiness",
+      "elapsedMs": 531,
+      "expectationPassed": null,
+      "result": {
+        "workflow": "readiness",
+        "model": "jev-1.13.0",
+        "evaluatedAt": "2026-09-19T05:42:40.879Z",
+        "mode": "live",
+        "findings": [
+          {
+            "id": "startup",
+            "title": "Startup procedure",
+            "statement": "Does the document describe concrete commands or steps to start this service?",
+            "kind": "noul",
+            "guidance": "The supplied context supports this check. Verify the documented procedure works in practice.",
+            "value": 0.97,
+            "status": "pass"
+          },
+          {
+            "id": "health",
+            "title": "Health verification",
+            "statement": "Does the document explain an observable check that verifies this service is healthy?",
+            "kind": "noul",
+            "guidance": "The supplied context supports this check. Verify the documented procedure works in practice.",
+            "value": 0.96,
+            "status": "pass"
+          },
+          {
+            "id": "rollback",
+            "title": "Rollback procedure",
+            "statement": "Does the document describe concrete steps to restore a previous working deployment?",
+            "kind": "noul",
+            "guidance": "Add rollback steps and a way to verify recovery.",
+            "value": 0.05,
+            "status": "attention"
+          },
+          {
+            "id": "escalation",
+            "title": "Escalation path",
+            "statement": "Does the document identify a specific team or contact channel for operational incidents?",
+            "kind": "noul",
+            "guidance": "The supplied context supports this check. Verify the documented procedure works in practice.",
+            "value": 0.89,
+            "status": "pass"
+          }
+        ],
+        "needsReview": true
+      }
+    },
+    {
+      "name": "templates",
+      "elapsedMs": 197,
+      "expectationPassed": null,
+      "result": {
+        "workflow": "templates",
+        "model": "jev-1.13.0",
+        "evaluatedAt": "2026-09-19T05:42:41.076Z",
+        "mode": "live",
+        "findings": [
+          {
+            "id": "recommendation",
+            "title": "Suggested software template",
+            "statement": "Choose the best software template for the context. Select none when candidates do not meet explicit constraints or evidence is insufficient.",
+            "kind": "choice",
+            "guidance": "Confirm the fit with the template maintainer or team before proceeding.",
+            "value": "Node.js service",
+            "confidence": 0.81,
+            "probabilities": {
+              "none": 0.12,
+              "c1": 0,
+              "c0": 0.88
+            },
+            "candidate": {
+              "id": "node",
+              "title": "Node.js service",
+              "description": "Node.js HTTP service with PostgreSQL and Kubernetes deployment."
+            },
+            "status": "pass"
+          }
+        ],
+        "needsReview": false
+      }
+    },
+    {
+      "name": "ownership",
+      "elapsedMs": 219,
+      "expectationPassed": null,
+      "result": {
+        "workflow": "ownership",
+        "model": "jev-1.13.0",
+        "evaluatedAt": "2026-09-19T05:42:41.296Z",
+        "mode": "live",
+        "findings": [
+          {
+            "id": "recommendation",
+            "title": "Suggested responsible team",
+            "statement": "Choose the best responsible team for the context. Select none when candidates do not meet explicit constraints or evidence is insufficient.",
+            "kind": "choice",
+            "guidance": "Confirm the fit with the template maintainer or team before proceeding.",
+            "value": "Payments platform",
+            "confidence": 0.9,
+            "probabilities": {
+              "c1": 0,
+              "none": 0.07,
+              "c2": 0,
+              "c0": 0.93
+            },
+            "candidate": {
+              "id": "payments",
+              "title": "Payments platform",
+              "description": "Payment processing, checkout APIs, transaction reconciliation, and billing infrastructure."
+            },
+            "status": "pass"
+          }
+        ],
+        "needsReview": false
+      }
+    },
+    {
+      "name": "incident",
+      "elapsedMs": 280,
+      "expectationPassed": null,
+      "result": {
+        "workflow": "incident",
+        "model": "jev-1.13.0",
+        "evaluatedAt": "2026-09-19T05:42:41.576Z",
+        "mode": "live",
+        "findings": [
+          {
+            "id": "impact",
+            "title": "Reported impact",
+            "statement": "Classify the explicitly reported customer impact. Missing impact information means unknown.",
+            "kind": "choice",
+            "guidance": "Verify the reported impact against monitoring and your incident severity policy.",
+            "value": "degraded",
+            "confidence": 0.93,
+            "probabilities": {
+              "widespread": 0.01,
+              "unknown": 0,
+              "limited": 0.04,
+              "degraded": 0.95
+            },
+            "status": "attention"
+          },
+          {
+            "id": "area",
+            "title": "Investigation area",
+            "statement": "Choose the first investigation area directly supported by the symptoms. This is a lead, not a root-cause finding.",
+            "kind": "choice",
+            "guidance": "Use this lead to choose an existing runbook; corroborate it with telemetry.",
+            "value": "capacity",
+            "confidence": 0.75,
+            "probabilities": {
+              "dependency": 0,
+              "capacity": 0.81,
+              "deployment": 0.19,
+              "access": 0,
+              "unknown": 0
+            },
+            "status": "review"
+          }
+        ],
+        "needsReview": true
+      }
+    },
+    {
+      "name": "change-risk",
+      "elapsedMs": 302,
+      "expectationPassed": null,
+      "result": {
+        "workflow": "change-risk",
+        "model": "jev-1.13.0",
+        "evaluatedAt": "2026-09-19T05:42:41.879Z",
+        "mode": "live",
+        "findings": [
+          {
+            "id": "breaking",
+            "title": "Compatibility concern",
+            "statement": "Does the proposed change explicitly remove or incompatibly alter a public API, data format, or consumer contract?",
+            "kind": "noul",
+            "guidance": "Review consumers and plan a compatible transition.",
+            "value": 0.96,
+            "status": "attention"
+          },
+          {
+            "id": "migration",
+            "title": "Data migration concern",
+            "statement": "Does the proposed change modify persisted data or its schema?",
+            "kind": "noul",
+            "guidance": "Review migration ordering, backups, and recovery with the data owner.",
+            "value": 0.95,
+            "status": "attention"
+          },
+          {
+            "id": "access",
+            "title": "Access control concern",
+            "statement": "Does the proposed change alter authentication, authorization, or credential handling?",
+            "kind": "noul",
+            "guidance": "This concern is not established by the supplied context. Confirm against the actual change.",
+            "value": 0.06,
+            "status": "pass"
+          },
+          {
+            "id": "rollback",
+            "title": "Rollback documented",
+            "statement": "Does the context describe concrete steps to undo this proposed change?",
+            "kind": "noul",
+            "guidance": "Document and exercise a rollback procedure.",
+            "value": 0.04,
+            "status": "attention"
+          }
+        ],
+        "needsReview": true
+      }
+    },
+    {
+      "name": "search",
+      "elapsedMs": 343,
+      "expectationPassed": null,
+      "result": {
+        "workflow": "search",
+        "model": "jev-1.13.0",
+        "evaluatedAt": "2026-09-19T05:42:42.222Z",
+        "mode": "live",
+        "findings": [
+          {
+            "id": "candidate_0",
+            "title": "Payments platform",
+            "statement": "How directly does this candidate answer or satisfy your question?",
+            "kind": "score",
+            "guidance": "Open the source and verify that it answers your question.",
+            "value": 2.87,
+            "confidence": 0.87,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.01,
+              "2": 0.05,
+              "3": 0.92
+            },
+            "candidate": {
+              "id": "payments",
+              "title": "Payments platform",
+              "description": "Payment processing, checkout APIs, transaction reconciliation, and billing infrastructure."
+            },
+            "levels": [
+              "Unrelated or insufficient information",
+              "Related topic but does not answer the request",
+              "Useful partial match",
+              "Directly answers or satisfies the request"
+            ],
+            "status": "pass"
+          },
+          {
+            "id": "candidate_1",
+            "title": "Identity platform",
+            "statement": "How directly does this candidate answer or satisfy your question?",
+            "kind": "score",
+            "guidance": "Open the source and verify that it answers your question.",
+            "value": 0.27,
+            "confidence": 0.73,
+            "probabilities": {
+              "0": 0.74,
+              "1": 0.26,
+              "2": 0,
+              "3": 0
+            },
+            "candidate": {
+              "id": "identity",
+              "title": "Identity platform",
+              "description": "User authentication, authorization, OAuth, and account access."
+            },
+            "levels": [
+              "Unrelated or insufficient information",
+              "Related topic but does not answer the request",
+              "Useful partial match",
+              "Directly answers or satisfies the request"
+            ],
+            "status": "review"
+          },
+          {
+            "id": "candidate_2",
+            "title": "Developer platform",
+            "statement": "How directly does this candidate answer or satisfy your question?",
+            "kind": "score",
+            "guidance": "Open the source and verify that it answers your question.",
+            "value": 0.11,
+            "confidence": 0.89,
+            "probabilities": {
+              "0": 0.9,
+              "1": 0.1,
+              "2": 0,
+              "3": 0
+            },
+            "candidate": {
+              "id": "developer",
+              "title": "Developer platform",
+              "description": "Service templates, Kubernetes deployments, CI pipelines, and developer tooling."
+            },
+            "levels": [
+              "Unrelated or insufficient information",
+              "Related topic but does not answer the request",
+              "Useful partial match",
+              "Directly answers or satisfies the request"
+            ],
+            "status": "attention"
+          }
+        ],
+        "needsReview": true
+      }
+    },
+    {
+      "name": "readiness-complete",
+      "elapsedMs": 203,
+      "expectationPassed": true,
+      "result": {
+        "workflow": "readiness",
+        "model": "jev-1.13.0",
+        "evaluatedAt": "2026-09-19T05:42:42.426Z",
+        "mode": "live",
+        "findings": [
+          {
+            "id": "startup",
+            "title": "Startup procedure",
+            "statement": "Does the document describe concrete commands or steps to start this service?",
+            "kind": "noul",
+            "guidance": "The supplied context supports this check. Verify the documented procedure works in practice.",
+            "value": 0.97,
+            "status": "pass"
+          },
+          {
+            "id": "health",
+            "title": "Health verification",
+            "statement": "Does the document explain an observable check that verifies this service is healthy?",
+            "kind": "noul",
+            "guidance": "The supplied context supports this check. Verify the documented procedure works in practice.",
+            "value": 0.95,
+            "status": "pass"
+          },
+          {
+            "id": "rollback",
+            "title": "Rollback procedure",
+            "statement": "Does the document describe concrete steps to restore a previous working deployment?",
+            "kind": "noul",
+            "guidance": "The supplied context supports this check. Verify the documented procedure works in practice.",
+            "value": 0.95,
+            "status": "pass"
+          },
+          {
+            "id": "escalation",
+            "title": "Escalation path",
+            "statement": "Does the document identify a specific team or contact channel for operational incidents?",
+            "kind": "noul",
+            "guidance": "The supplied context supports this check. Verify the documented procedure works in practice.",
+            "value": 0.97,
+            "status": "pass"
+          }
+        ],
+        "needsReview": false
+      }
+    },
+    {
+      "name": "templates-no-match",
+      "elapsedMs": 281,
+      "expectationPassed": true,
+      "result": {
+        "workflow": "templates",
+        "model": "jev-1.13.0",
+        "evaluatedAt": "2026-09-19T05:42:42.707Z",
+        "mode": "live",
+        "findings": [
+          {
+            "id": "recommendation",
+            "title": "Suggested software template",
+            "statement": "Choose the best software template for the context. Select none when candidates do not meet explicit constraints or evidence is insufficient.",
+            "kind": "choice",
+            "guidance": "Confirm the fit with the template maintainer or team before proceeding.",
+            "value": "none",
+            "confidence": 1,
+            "probabilities": {
+              "c0": 0,
+              "none": 1
+            },
+            "status": "review"
+          }
+        ],
+        "needsReview": true
+      }
+    }
+  ]
+}
