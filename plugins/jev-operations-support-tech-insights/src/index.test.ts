@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PassThrough, type Readable } from 'node:stream';
 import { ConfigReader } from '@backstage/config';
 import {
   createJevTechInsightsFactRetriever,
@@ -29,6 +30,7 @@ function settings(overrides: Partial<JevTechInsightsSettings> = {}): JevTechInsi
     allowPrivateDocuments: false,
     model: 'jev-1.13.0',
     workflow: 'readiness',
+    demoMode: false,
     ...overrides,
   };
 }
@@ -46,7 +48,9 @@ function entity(name: string, annotations: Record<string, string> = {}) {
   };
 }
 
-function context(items: ReturnType<typeof entity>[], readUrl: (url: string) => Promise<{ buffer: () => Promise<Buffer> }>) {
+type ReadUrl = (url: string) => Promise<{ buffer?: () => Promise<Buffer>; stream?: () => Readable }>;
+
+function context(items: ReturnType<typeof entity>[], readUrl: ReadUrl) {
   const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(items)));
   vi.stubGlobal('fetch', fetcher);
   return {
@@ -139,6 +143,37 @@ describe('Jev Tech Insights module', () => {
     expect(readUrl).not.toHaveBeenCalled();
   });
 
+  it('stores honest not-evaluated facts in demo mode instead of calling Jev or storing fixtures', async () => {
+    const value = readJevTechInsightsSettings(new ConfigReader({
+      jevOperationsSupport: { apiKey: 'not-used-in-demo-mode', demoMode: true },
+    }));
+    expect(value.demoMode).toBe(true);
+
+    const optedIn = entity('service', {
+      [defaultOptInAnnotation]: 'true',
+      [defaultSourceAnnotation]: 'https://docs.example.test/runbook.md',
+      [defaultSourceVisibilityAnnotation]: 'public',
+    });
+    const readUrl = vi.fn();
+    const setup = context([optedIn], readUrl);
+    const evaluateSpy = vi.fn();
+    // Demo mode is why the module passes no evaluator, even though an API key is present.
+    const retriever = createJevTechInsightsFactRetriever(settings({ demoMode: true }));
+
+    const facts = await retriever.handler(setup.context as never);
+
+    expect(evaluateSpy).not.toHaveBeenCalled();
+    expect(readUrl).not.toHaveBeenCalled();
+    expect(facts[0].facts).toMatchObject({
+      fetchStatus: 'not-evaluated',
+      evaluationStatus: 'not-evaluated',
+      evidenceStatus: 'not-evaluated',
+      errorCode: 'jev-demo-mode',
+      passCount: 0,
+      coverage: 0,
+    });
+  });
+
   it('caps document bytes and continues with other selected entities', async () => {
     const tooLarge = entity('too-large', {
       [defaultOptInAnnotation]: 'true',
@@ -165,6 +200,56 @@ describe('Jev Tech Insights module', () => {
       evidenceStatus: 'not-evaluated',
       errorCode: 'document-too-large',
     });
+    expect(facts.find(fact => fact.entity.name === 'valid')?.facts).toMatchObject({ evaluationStatus: 'evaluated' });
+  });
+
+  it('passes its deadline to the shared Jev client', async () => {
+    const optedIn = entity('service', {
+      [defaultOptInAnnotation]: 'true',
+      [defaultSourceAnnotation]: 'https://docs.example.test/runbook.md',
+      [defaultSourceVisibilityAnnotation]: 'public',
+    });
+    const readUrl = vi.fn().mockResolvedValue({ buffer: async () => Buffer.from('Start with npm start. Health: GET /health returns 200.') });
+    const setup = context([optedIn], readUrl);
+    const evaluateSpy = vi.fn(async (request: JevRequest, signal?: AbortSignal) => {
+      expect(signal?.aborted).toBe(false);
+      return evaluate(request);
+    });
+    const retriever = createJevTechInsightsFactRetriever(settings(), evaluateSpy);
+
+    const facts = await retriever.handler(setup.context as never);
+
+    expect(facts[0].facts).toMatchObject({ evaluationStatus: 'evaluated' });
+    expect(evaluateSpy.mock.calls[0][1]).toBeInstanceOf(AbortSignal);
+  });
+
+  it('destroys a stalled source stream at the deadline and keeps other entities', async () => {
+    const stalled = entity('stalled', {
+      [defaultOptInAnnotation]: 'true',
+      [defaultSourceAnnotation]: 'https://docs.example.test/stalled.md',
+      [defaultSourceVisibilityAnnotation]: 'public',
+    });
+    const valid = entity('valid', {
+      [defaultOptInAnnotation]: 'true',
+      [defaultSourceAnnotation]: 'https://docs.example.test/valid.md',
+      [defaultSourceVisibilityAnnotation]: 'public',
+    });
+    const stream = new PassThrough();
+    stream.write('Partial runbook content that never ends.');
+    const readUrl = vi.fn(async (url: string) => (url.includes('stalled')
+      ? { stream: () => stream }
+      : { buffer: async () => Buffer.from('Start with npm start. Health: GET /health returns 200.') }));
+    const setup = context([stalled, valid], readUrl);
+    const retriever = createJevTechInsightsFactRetriever(settings({ timeoutMs: 50, concurrency: 2 }), async request => evaluate(request));
+
+    const facts = await retriever.handler(setup.context as never);
+
+    expect(facts.find(fact => fact.entity.name === 'stalled')?.facts).toMatchObject({
+      fetchStatus: 'error',
+      evaluationStatus: 'not-evaluated',
+      errorCode: 'source-timeout',
+    });
+    expect(stream.destroyed).toBe(true);
     expect(facts.find(fact => fact.entity.name === 'valid')?.facts).toMatchObject({ evaluationStatus: 'evaluated' });
   });
 

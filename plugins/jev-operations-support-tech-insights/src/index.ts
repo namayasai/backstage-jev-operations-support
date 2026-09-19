@@ -34,7 +34,7 @@ const defaultMaxDocumentBytes = 12_000;
 const defaultTimeoutMs = 15_000;
 const defaultConcurrency = 4;
 
-type Evaluate = (request: JevRequest) => Promise<JevResponse>;
+type Evaluate = (request: JevRequest, signal?: AbortSignal) => Promise<JevResponse>;
 export type JevTechInsightsSettings = Readonly<{
   entityRefs: string[];
   targetKinds: string[];
@@ -45,6 +45,8 @@ export type JevTechInsightsSettings = Readonly<{
   allowPrivateDocuments: boolean;
   model: string;
   workflow: 'readiness';
+  /** Root `jevOperationsSupport.demoMode`; the retriever produces not-evaluated facts while it is on. */
+  demoMode: boolean;
 }>;
 
 export const jevTechInsightsFactSchema: FactSchema = {
@@ -165,6 +167,7 @@ export function readJevTechInsightsSettings(config: Config): JevTechInsightsSett
     allowPrivateDocuments: section?.getOptionalBoolean('allowPrivateDocuments') ?? false,
     model: nonEmptyString(section?.getOptionalString('model') ?? config.getOptionalString('jevOperationsSupport.model'), defaultModel, 'model'),
     workflow: defaultWorkflow,
+    demoMode: config.getOptionalBoolean('jevOperationsSupport.demoMode') ?? false,
   };
 }
 
@@ -248,6 +251,11 @@ function unevaluatedFact(
   });
 }
 
+/** Demo mode is reported as its own code so a fact is never read as a missing key. */
+function noEvaluatorCode(settings: JevTechInsightsSettings): string {
+  return settings.demoMode ? 'jev-demo-mode' : 'jev-not-configured';
+}
+
 function isTimeout(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
@@ -263,21 +271,31 @@ class DocumentTooLargeError extends Error {
   }
 }
 
+function timeoutError(): Error {
+  const error = new Error('Timed out');
+  error.name = 'AbortError';
+  return error;
+}
+
+/**
+ * Races work against a deadline, passes the signal to the work so it can cancel
+ * itself, and reports the deadline rather than whatever the cancelled work rejected with.
+ */
 async function withTimeout<T>(work: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
   const controller = new AbortController();
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeout = setTimeout(() => {
-      controller.abort();
-      const error = new Error('Timed out');
-      error.name = 'AbortError';
-      reject(error);
-    }, timeoutMs);
+  const timer = setTimeout(() => controller.abort(timeoutError()), timeoutMs);
+  let abort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    abort = () => reject(controller.signal.reason);
+    controller.signal.addEventListener('abort', abort, { once: true });
   });
   try {
-    return await Promise.race([work(controller.signal), timeoutPromise]);
+    return await Promise.race([work(controller.signal), aborted]);
+  } catch (error) {
+    throw controller.signal.aborted ? controller.signal.reason : error;
   } finally {
-    if (timeout) clearTimeout(timeout);
+    clearTimeout(timer);
+    if (abort) controller.signal.removeEventListener('abort', abort);
   }
 }
 
@@ -290,22 +308,26 @@ async function fetchDocument(
   try {
     const buffer = await withTimeout(async signal => {
       const response = await context.urlReader.readUrl(source.raw, { signal });
-      if (response.stream) {
-        const stream = response.stream();
+      if (!response.stream) return response.buffer();
+      const stream = response.stream();
+      // The deadline must also end the stream; racing it alone would leave the read running.
+      const destroy = () => stream.destroy();
+      if (signal.aborted) destroy();
+      else signal.addEventListener('abort', destroy, { once: true });
+      try {
         const chunks: Buffer[] = [];
         let total = 0;
         for await (const chunk of stream) {
           const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
           total += part.byteLength;
-          if (total > settings.maxDocumentBytes) {
-            stream.destroy();
-            throw new DocumentTooLargeError();
-          }
+          if (total > settings.maxDocumentBytes) throw new DocumentTooLargeError();
           chunks.push(part);
         }
         return Buffer.concat(chunks, total);
+      } finally {
+        signal.removeEventListener('abort', destroy);
+        if (!stream.destroyed) stream.destroy();
       }
-      return response.buffer();
     }, settings.timeoutMs);
     if (buffer.byteLength > settings.maxDocumentBytes) throw new DocumentTooLargeError();
     return { text: buffer.toString('utf8'), safeSource: source.safe };
@@ -344,7 +366,7 @@ async function evaluateDocument(
     });
   }
   if (!evaluate) {
-    return unevaluatedFact(entity, settings, { source, errorCode: 'jev-not-configured' });
+    return unevaluatedFact(entity, settings, { source, errorCode: noEvaluatorCode(settings) });
   }
 
   const parsedInput = evaluationRequestSchema.safeParse({ workflow: settings.workflow, text, candidates: [] });
@@ -359,9 +381,10 @@ async function evaluateDocument(
   const { request, checks } = buildEvaluation(input);
   let response: JevResponse;
   try {
-    response = await withTimeout(() => evaluate(request), settings.timeoutMs);
+    // The shared client cancels its own request when this deadline aborts.
+    response = await withTimeout(signal => evaluate(request, signal), settings.timeoutMs);
   } catch (error) {
-    const errorCode = isProviderBusy(error) ? 'jev-busy' : isTimeout(error) ? 'jev-timeout' : 'jev-error';
+    const errorCode = isTimeout(error) ? 'jev-timeout' : isProviderBusy(error) ? 'jev-busy' : 'jev-error';
     logger.warn('Jev Tech Insights evaluation failed', { entityRef: entityRefString(entity), errorCode });
     return unevaluatedFact(entity, settings, {
       source,
@@ -395,7 +418,7 @@ async function retrieveEntityFact(
   evaluate: Evaluate | undefined,
 ): Promise<TechInsightFact | undefined> {
   if (!hasOptIn(entity)) return undefined;
-  if (!evaluate) return unevaluatedFact(entity, settings, { errorCode: 'jev-not-configured' });
+  if (!evaluate) return unevaluatedFact(entity, settings, { errorCode: noEvaluatorCode(settings) });
   const rawSource = entity.metadata.annotations?.[defaultSourceAnnotation]?.trim();
   if (!rawSource) return unevaluatedFact(entity, settings, { errorCode: 'source-not-configured' });
 
@@ -508,7 +531,10 @@ export const techInsightsModuleJev = createBackendModule({
       async init({ config, providers }) {
         const settings = readJevTechInsightsSettings(config);
         const apiKey = config.getOptionalString('jevOperationsSupport.apiKey');
-        const client = apiKey ? createJevClient({ apiKey, model: settings.model, timeoutMs: settings.timeoutMs }) : undefined;
+        // Demo mode disables the provider call even when a key exists: a scheduled retriever
+        // must not be the one integration that quietly starts billing a "synthetic" install.
+        // The retriever still runs and stores honest not-evaluated facts, never demo fixtures.
+        const client = apiKey && !settings.demoMode ? createJevClient({ apiKey, model: settings.model, timeoutMs: settings.timeoutMs }) : undefined;
         providers.addFactRetrievers({
           [jevTechInsightsFactRetrieverId]: createJevTechInsightsFactRetriever(settings, client?.evaluate),
         });

@@ -59,6 +59,13 @@ metadata:
     jev.backstage.io/tech-insights-source-visibility: public
 ```
 
+When the root `jevOperationsSupport.demoMode` is `true`, the retriever still runs
+on its schedule but makes no provider call, even if `apiKey` is set, and no
+document is read. Every opted-in entity gets an honest not-evaluated fact with
+`errorCode: jev-demo-mode`. Demo fixture scores are never stored as facts, so a
+demo installation cannot produce Tech Insights rows that look like real
+evaluations. Turn demo mode off to collect live evidence.
+
 Use `private` for a document that requires credentials. It is skipped with
 `private-source-not-allowed` unless `allowPrivateDocuments: true` is set by the
 Backstage operator. URLs are restricted to HTTPS, query strings and fragments
@@ -70,8 +77,8 @@ components with the opt-in annotation.
 The fact deliberately carries independent state fields. A successful result
 has `fetchStatus: fetched`, `evaluationStatus: evaluated`, and an
 `evidenceStatus` of `pass`, `review`, or `attention`. Missing source, blocked
-private source, size or timeout failure, missing API key, and provider errors
-use `evidenceStatus: not-evaluated`; their `errorCode` explains the stable
+private source, size or timeout failure, missing API key, demo mode, and provider
+errors use `evidenceStatus: not-evaluated`; their `errorCode` explains the stable
 failure class. The retriever never turns an unavailable document into a zero
 score or a passing result. `coverage` is the fraction of defined checks that
 produced findings, not a confidence score. The row timestamp, `evaluatedAt`,
@@ -105,6 +112,13 @@ This boolean check is an evidence condition; it is not a health score. A
 consumer that aggregates service health should exclude facts whose
 `evaluationStatus` is `not-evaluated` or `error` instead of treating the
 condition's false result as a service failure.
+
+`timeoutMs` is one deadline per entity for both stages. It cancels the
+`UrlReaderService` read and destroys a stalled document stream, and it is passed
+to the shared Jev client so the provider request is cancelled too instead of
+being left running. Each entity keeps its own result: a missing, empty,
+malformed, or oversized document produces an error fact for that entity only and
+never ends the retrieval for the others.
 
 If a source cannot be read, inspect the retriever logs and the latest fact's
 `fetchStatus` and `errorCode`. If Jev rejects or times out, the fact records an

@@ -12,3 +12,5 @@ export const EntityJevContent = jevPlugin.provide(createRoutableExtension({
 }));
 export { JevWorkbench } from './Workbench';
 export type { WorkbenchProps } from './Workbench';
+export { AlertInbox } from './AlertInbox';
+export type { AlertInboxProps, AlertNotificationPage, AwsAlertNotification, JevAwsAlertMetadata } from './AlertInbox';

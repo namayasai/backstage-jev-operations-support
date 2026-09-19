@@ -38,4 +38,14 @@ describe('decision workbench', () => {
     expect(screen.getByRole('alert').textContent).toBe('Jev is busy');
     await waitFor(() => expect((screen.getByRole('button', { name: 'Evaluate with Jev →' }) as HTMLButtonElement).disabled).toBe(false));
   });
+  it('keeps the current document and result when TechDocs loading fails', async () => {
+    const text = 'A sufficiently detailed document';
+    render(<JevWorkbench initialText={text} techDocs={{ entityRef: 'component:default/checkout', load: async () => { throw new Error('TechDocs unavailable'); } }} evaluate={async input => demoEvaluation(input)} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Evaluate with Jev →' }));
+    await screen.findByText('Decision details');
+    fireEvent.click(screen.getByRole('button', { name: 'Load into editor' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('TechDocs unavailable');
+    expect((screen.getByLabelText('Context') as HTMLTextAreaElement).value).toBe(text);
+    expect(screen.getByText('Decision details')).toBeTruthy();
+  });
 });

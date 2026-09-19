@@ -7,8 +7,6 @@ export interface Config {
       allowedTopicArns: string[];
       /** Explicit Backstage User or Group entity refs to notify. @visibility backend */
       recipientEntityRefs: string[];
-      /** Notifications topic shown in the standard inbox. @visibility backend */
-      notificationTopic?: string;
       /** Jev model override. @visibility backend */
       model?: string;
       /** Jev request deadline in milliseconds. @visibility backend */

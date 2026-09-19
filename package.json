@@ -1,6 +1,6 @@
 {
   "name": "backstage-jev-operations-support",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Six decision workflows for Backstage, powered by TypeSafe Jev",
   "license": "Apache-2.0",
@@ -11,7 +11,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspace plugins/jev-operations-support-common --workspace plugins/jev-operations-support-backend --workspace plugins/jev-operations-support --workspace plugins/jev-operations-support-tech-insights --workspace plugins/jev-operations-support-aws-notifications",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -19,7 +19,8 @@
     "build:demo": "vite build",
     "check": "npm run typecheck && npm test && npm run build && npm run build:demo",
     "test:live": "tsx scripts/live-smoke.ts",
-    "pack:plugins": "npm run build && mkdir -p dist/packages && npm pack --workspace plugins/jev-operations-support-common --workspace plugins/jev-operations-support-backend --workspace plugins/jev-operations-support --pack-destination dist/packages"
+    "eval:live": "tsx scripts/eval-fixtures.ts",
+    "pack:plugins": "npm run build && mkdir -p dist/packages && npm pack --workspaces --pack-destination dist/packages"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",
@@ -31,6 +32,7 @@
     "@types/react-dom": "^18.3.0",
     "@types/supertest": "^6.0.0",
     "@vitejs/plugin-react": "^4.4.0",
+    "better-sqlite3": "^13.0.3",
     "jsdom": "^26.1.0",
     "supertest": "^7.1.0",
     "tsup": "^8.5.0",

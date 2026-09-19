@@ -108,17 +108,23 @@ export async function evaluatePullRequestMarkdown(options: GitHubEvaluationOptio
   abortIfNeeded(signal);
   const finalState = await options.client.getPullRequest(event.repository, event.pullRequestNumber, signal);
   if (finalState.headSha !== current.headSha || finalState.baseSha !== current.baseSha) return { status: 'ignored', reason: 'stale_delivery' };
+  // Every document is validated before the first provider call, so a limit violation
+  // never happens after an earlier document was already evaluated and charged.
+  const prepared = documents.map(document => {
+    const textBytes = new TextEncoder().encode(document.content).byteLength;
+    if (textBytes > options.maxTotalBytes || document.content.length > 16000) throw new GitHubLimitError(`Document ${document.path} exceeded the readiness context size limit.`);
+    const parsed = evaluationRequestSchema.safeParse({ workflow: 'readiness', text: document.content, candidates: [] });
+    if (!parsed.success) throw new GitHubLimitError(`Document ${document.path} is empty, too short, or otherwise outside the readiness evaluation limits.`);
+    return { path: document.path, input: parsed.data };
+  });
   const results: Array<{ path: string; result: EvaluationResult }> = [];
-  for (const document of documents) {
+  for (const document of prepared) {
+    // Each document keeps its own readiness judgment; contexts are never merged.
+    const { request, checks } = buildEvaluation(document.input);
     try {
-      const textBytes = new TextEncoder().encode(document.content).byteLength;
-      if (textBytes > options.maxTotalBytes || document.content.length > 16000) throw new GitHubLimitError(`Document ${document.path} exceeded the readiness context size limit.`);
-      const parsed = evaluationRequestSchema.safeParse({ workflow: 'readiness', text: document.content, candidates: [] });
-      if (!parsed.success) throw new GitHubLimitError(`Document ${document.path} could not fit within the readiness evaluation limits.`);
-      const { request, checks } = buildEvaluation(parsed.data);
       abortIfNeeded(signal);
       const response = await options.evaluate(request, signal);
-      results.push({ path: document.path, result: summarize(parsed.data, response, checks, options.confidenceThreshold) });
+      results.push({ path: document.path, result: summarize(document.input, response, checks, options.confidenceThreshold) });
     } catch (error) {
       if (results.length > 0) throw new PartialGitHubEvaluationError(results);
       throw error;

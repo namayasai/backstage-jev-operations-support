@@ -1,0 +1,62 @@
+[
+  {
+    "id": "readiness-ja-complete",
+    "workflow": "readiness",
+    "text": "起動手順: DATABASE_URL を設定し、npm ci の後に npm start を実行する。ヘルスチェック: GET /health が 200 を返し、database=connected であることを確認する。ロールバック: kubectl rollout undo deployment/checkout を実行し、/health が 200 に戻ることを確認する。障害時は Payments チームの #payments-oncall に連絡する。",
+    "candidates": [],
+    "expected": {
+      "startup": "pass",
+      "health": "pass",
+      "rollback": "pass",
+      "escalation": "pass"
+    }
+  },
+  {
+    "id": "change-risk-mixed",
+    "workflow": "change-risk",
+    "text": "The release removes the public /v1/payments contract and moves consumers to /v2/payments. DB migration drops payment_status after the backfill. 認証方式を OAuth scope に変更し、旧 credential は無効化する。Rollback: redeploy the previous image and restore the column from backup.",
+    "candidates": [],
+    "expected": {
+      "breaking": "attention",
+      "migration": "attention",
+      "access": "attention",
+      "rollback": "pass"
+    }
+  },
+  {
+    "id": "change-risk-negation",
+    "workflow": "change-risk",
+    "text": "公開 API は変更しない。永続データの schema 変更はない。認証・認可と credential の扱いも変更しない。ロールバック手順は runbook の手順に従う。",
+    "candidates": [],
+    "expected": {
+      "breaking": "review",
+      "migration": "review",
+      "access": "review",
+      "rollback": "attention"
+    }
+  },
+  {
+    "id": "change-risk-implicit",
+    "workflow": "change-risk",
+    "text": "リリース後に問題があれば前のイメージに戻せる。詳細な差分、データ移行、利用者影響、アクセス変更については記載していない。",
+    "candidates": [],
+    "expected": {
+      "breaking": "review",
+      "migration": "review",
+      "access": "review",
+      "rollback": "attention"
+    }
+  },
+  {
+    "id": "readiness-insufficient",
+    "workflow": "readiness",
+    "text": "サービスを運用する。",
+    "candidates": [],
+    "expected": {
+      "startup": "attention",
+      "health": "attention",
+      "rollback": "attention",
+      "escalation": "attention"
+    }
+  }
+]

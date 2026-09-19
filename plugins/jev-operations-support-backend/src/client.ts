@@ -5,78 +5,58 @@ export class ProviderError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
 }
 
+/** Several modules share this client, so a caller cancellation must not claim a webhook-specific cause. */
+function cancelledError(): ProviderError {
+  return new ProviderError(503, 'Jev evaluation was cancelled before a decision was returned.');
+}
+
 export function createJevClient(options: { apiKey: string; model: string; timeoutMs?: number; fetch?: typeof fetch }) {
   const fetcher = options.fetch ?? fetch;
   return {
+    /** The optional caller signal is combined with the client deadline and also bounds the response body read. */
     async evaluate(request: JevRequest, parentSignal?: AbortSignal): Promise<JevResponse> {
-      const timeout = createTimeoutSignal(parentSignal, options.timeoutMs ?? 15000);
+      const deadline = AbortSignal.timeout(options.timeoutMs ?? 15000);
+      const signal = parentSignal ? AbortSignal.any([parentSignal, deadline]) : deadline;
       try {
         const response = await fetcher('https://api.typesafe.ai/v1/systemone', {
           method: 'POST', redirect: 'error',
           headers: { Authorization: `Bearer ${options.apiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...request, model: options.model }),
-          signal: timeout.signal,
+          signal,
         });
-        if (parentSignal?.aborted) throw new ProviderError(503, 'Jev evaluation exceeded the webhook deadline. Redeliver the event manually.');
+        if (parentSignal?.aborted) throw cancelledError();
         if (!response.ok) {
           // Never reflect provider bodies: they may contain submitted documents or credentials.
           if (response.status === 429 || response.status === 529) throw new ProviderError(503, 'Jev is busy. Wait before retrying.');
           throw new ProviderError(502, `Jev rejected the evaluation (HTTP ${response.status}). Check the backend configuration.`);
         }
-        try { return validateResponse(await readJsonWithSignal(response, timeout.signal), request); }
+        try { return validateResponse(await readWithSignal(() => response.json(), signal), request); }
         catch (error) {
           if (error instanceof ProviderError) throw error;
-          if (parentSignal?.aborted) throw new ProviderError(503, 'Jev evaluation exceeded the webhook deadline. Redeliver the event manually.');
+          if (parentSignal?.aborted) throw cancelledError();
+          // A body that never arrives is a deadline, not an invalid decision.
+          if (signal.aborted) throw new ProviderError(502, 'Jev could not be reached or timed out. Try again later.');
           throw new ProviderError(502, 'Jev returned an invalid or incomplete response. No decision was accepted.');
         }
       } catch (error) {
         if (error instanceof ProviderError) throw error;
-        if (parentSignal?.aborted) throw new ProviderError(503, 'Jev evaluation exceeded the webhook deadline. Redeliver the event manually.');
+        if (parentSignal?.aborted) throw cancelledError();
         throw new ProviderError(502, 'Jev could not be reached or timed out. Try again later.');
-      } finally {
-        timeout.cleanup();
       }
     },
   };
 }
 
-async function readJsonWithSignal(response: Response, signal: AbortSignal): Promise<unknown> {
+/** Applies the deadline to body reading too, for fetch implementations that do not abort the body themselves. */
+async function readWithSignal<T>(read: () => Promise<T>, signal: AbortSignal): Promise<T> {
   let abort: (() => void) | undefined;
   const aborted = new Promise<never>((_resolve, reject) => {
     abort = () => reject(new Error('response read aborted'));
     if (signal.aborted) abort();
     else signal.addEventListener('abort', abort, { once: true });
   });
-  try { return await Promise.race([response.json(), aborted]); }
+  try { return await Promise.race([read(), aborted]); }
   finally { if (abort) signal.removeEventListener('abort', abort); }
-}
-
-async function readArrayBufferWithSignal(response: Response, signal: AbortSignal): Promise<ArrayBuffer> {
-  let abort: (() => void) | undefined;
-  const aborted = new Promise<never>((_resolve, reject) => {
-    abort = () => reject(new Error('response read aborted'));
-    if (signal.aborted) abort();
-    else signal.addEventListener('abort', abort, { once: true });
-  });
-  try { return await Promise.race([response.arrayBuffer(), aborted]); }
-  finally { if (abort) signal.removeEventListener('abort', abort); }
-}
-
-function createTimeoutSignal(parentSignal: AbortSignal | undefined, timeoutMs: number): { signal: AbortSignal; cleanup: () => void } {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const abort = () => controller.abort(parentSignal?.reason);
-  if (parentSignal) {
-    if (parentSignal.aborted) abort();
-    else parentSignal.addEventListener('abort', abort, { once: true });
-  }
-  return {
-    signal: controller.signal,
-    cleanup: () => {
-      clearTimeout(timer);
-      parentSignal?.removeEventListener('abort', abort);
-    },
-  };
 }
 
 export type GitHubPullRequest = {
@@ -142,7 +122,7 @@ export function createGitHubClient(options: {
       throw new GitHubClientError(true, 'GitHub could not be reached or the request timed out. Redeliver the event manually.');
     }
     let bytes: ArrayBuffer;
-    try { bytes = await readArrayBufferWithSignal(response, signal); }
+    try { bytes = await readWithSignal(() => response.arrayBuffer(), signal); }
     catch { throw new GitHubClientError(true, 'GitHub returned an unreadable response. Redeliver the event manually.'); }
     if (bytes.byteLength > maxResponseBytes) throw new GitHubLimitError('GitHub response exceeded the configured response size limit.');
     if (!response.ok) {
@@ -171,7 +151,8 @@ export function createGitHubClient(options: {
       const perPage = 100;
       for (let page = 1; page <= optionsForList.maxPages; page++) {
         const raw = await getJson<unknown>(`/repos/${encodeRepository(repository)}/pulls/${pullRequestNumber}/files?per_page=${perPage}&page=${page}`, signal);
-        const files = Array.isArray((raw as { files?: unknown }).files) ? (raw as { files: unknown[] }).files : undefined;
+        // The pull request files endpoint returns a JSON array of file entries.
+        const files = Array.isArray(raw) ? (raw as unknown[]) : undefined;
         if (!files) throw new GitHubClientError(true, 'GitHub returned no changed-file list. Redeliver the event manually.');
         if (files.length > perPage || all.length + files.length > optionsForList.maxFiles) throw new GitHubLimitError('The pull request changed more files than the configured limit.');
         for (const file of files) {

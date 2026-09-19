@@ -170,6 +170,21 @@ describe('signed GitHub pull request webhook', () => {
     });
   });
 
+  it('refuses the delivery before any Jev call when a later document cannot be evaluated', async () => {
+    const client = githubClient({
+      listChangedFiles: vi.fn().mockResolvedValue([{ filename: 'docs/a.md', status: 'modified' }, { filename: 'docs/empty.md', status: 'modified' }]),
+      getFile: vi.fn(async (_repository, path) => ({ path, content: path.endsWith('empty.md') ? '' : 'Document A startup and health details.', size: 40 })),
+    });
+    const evaluate = vi.fn().mockResolvedValue(readinessResponse());
+    const { app } = withWebhook({ evaluate, githubWebhook: { ...withWebhook().options.githubWebhook!, client, maxDocuments: 2 } });
+    const raw = githubPayload();
+    await supertest(app).post('/webhooks/github').set('content-type', 'application/json').set('x-github-event', 'pull_request').set('x-github-delivery', 'delivery-empty').set('x-hub-signature-256', sign(raw)).send(raw).expect(422).expect(({ body }) => {
+      expect(body.error).toContain('docs/empty.md');
+      expect(body.retry).toBe('manual');
+    });
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
   it('removes failed deliveries so manual redelivery can retry Jev', async () => {
     const evaluate = vi.fn().mockRejectedValueOnce(new ProviderError(503, 'Jev is busy. Wait before retrying.')).mockResolvedValueOnce(readinessResponse());
     const { app } = withWebhook({ evaluate });
