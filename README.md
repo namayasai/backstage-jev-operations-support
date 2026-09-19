@@ -38,7 +38,7 @@ The repository's `.npmrc` uses `legacy-peer-deps` because Backstage's optional t
 
 ## Install in Backstage
 
-See [the installation guide](docs/installation.md) for package installation, frontend registration, the entity tab, permissions, and configuration. All three packages are public on npm; GitHub Release tarballs are also available. The shared package installs automatically with the frontend or backend.
+See [the installation guide](docs/installation.md) for package installation, frontend registration, the entity tab, permissions, and configuration. All three packages are public on npm; GitHub Release tarballs are also available. The shared package installs automatically with the frontend or backend. The [Plugin Directory submission](https://github.com/backstage/backstage/pull/35788) is awaiting upstream review.
 
 Backend configuration:
 
