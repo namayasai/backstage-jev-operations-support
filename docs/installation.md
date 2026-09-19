@@ -4,15 +4,15 @@ This release has been exercised on Backstage 1.55.0, Node.js 22.23.2, React 18, 
 
 ## Versions
 
-The public npm release is **0.2.0**: the frontend, backend, and shared packages. This repository's development version is **0.3.0**, which is not published. Everything in section 1 applies to the released 0.2.0 packages; the optional modules in section 5 exist only as locally built 0.3.0 tarballs.
+The current release is **0.3.0**, covering all five packages: the frontend, backend, and shared packages in section 1, and the two optional backend modules in section 5. Keep all installed packages on the same 0.3.0 line, because the optional modules import the backend's `/client` export.
 
 ## 1. Install packages
 
-The three core packages are public on npm. From your Backstage root, add the frontend and backend packages:
+The core packages are public on npm. From your Backstage root, add the frontend and backend packages:
 
 ```sh
-yarn --cwd packages/app add @namayasai/backstage-plugin-jev-operations-support@^0.2.0
-yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-backend@^0.2.0
+yarn --cwd packages/app add @namayasai/backstage-plugin-jev-operations-support@^0.3.0
+yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-backend@^0.3.0
 ```
 
 The shared `@namayasai/backstage-plugin-jev-operations-support-common` package is installed automatically. No custom tarball resolution is required. The host provides React 18, React DOM, and React Router 6.
@@ -20,11 +20,11 @@ The shared `@namayasai/backstage-plugin-jev-operations-support-common` package i
 For an npm-based workspace:
 
 ```sh
-npm install --workspace packages/app @namayasai/backstage-plugin-jev-operations-support@^0.2.0
-npm install --workspace packages/backend @namayasai/backstage-plugin-jev-operations-support-backend@^0.2.0
+npm install --workspace packages/app @namayasai/backstage-plugin-jev-operations-support@^0.3.0
+npm install --workspace packages/backend @namayasai/backstage-plugin-jev-operations-support-backend@^0.3.0
 ```
 
-Source and reproducible tarballs are also available from the [v0.2.0 release](https://github.com/namayasai/backstage-jev-operations-support/releases/tag/v0.2.0).
+Source and reproducible tarballs are also available from the [v0.3.0 release](https://github.com/namayasai/backstage-jev-operations-support/releases/tag/v0.3.0).
 
 ## 2. Register the backend
 
@@ -127,7 +127,23 @@ instead of the standard Notifications list. Both appear only when
 `jevOperationsSupport.awsNotifications` is configured; there is no extra setting
 for the table or its 30-day retention.
 
-The GitHub webhook is part of the backend package you already installed and needs only configuration. The Tech Insights and AWS modules are separate packages that are **not on npm**. They import the backend's `/client` export, which the released 0.2.0 backend does not provide, so they cannot honestly declare a dependency on a published version. Build and install them from local tarballs:
+The GitHub webhook is part of the backend package you already installed and needs only configuration. The Tech Insights and AWS modules are separate packages, published on npm at 0.3.0. Install the one you need by name, next to the 0.3.0 backend whose `/client` export it imports:
+
+```sh
+yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-tech-insights@^0.3.0
+yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-aws-notifications@^0.3.0
+```
+
+For an npm-based workspace:
+
+```sh
+npm install --workspace packages/backend @namayasai/backstage-plugin-jev-operations-support-tech-insights@^0.3.0
+npm install --workspace packages/backend @namayasai/backstage-plugin-jev-operations-support-aws-notifications@^0.3.0
+```
+
+The AWS alert inbox comes from the frontend package in section 1, so no extra frontend install is needed.
+
+Local tarballs remain an alternative if you prefer to build from source rather than install from the registry:
 
 ```sh
 git clone https://github.com/namayasai/backstage-jev-operations-support.git
@@ -136,16 +152,7 @@ npm ci
 npm run pack:plugins
 ```
 
-That writes five `0.3.0` tarballs to `dist/packages`. Install the modules together with the matching 0.3.0 backend and common tarballs — a 0.3.0 module will not resolve against the released 0.2.0 backend:
-
-```sh
-yarn --cwd packages/backend add \
-  file:/absolute/path/to/dist/packages/namayasai-backstage-plugin-jev-operations-support-common-0.3.0.tgz \
-  file:/absolute/path/to/dist/packages/namayasai-backstage-plugin-jev-operations-support-backend-0.3.0.tgz \
-  file:/absolute/path/to/dist/packages/namayasai-backstage-plugin-jev-operations-support-aws-notifications-0.3.0.tgz
-```
-
-Use the frontend `0.3.0` tarball in `packages/app` as well if you want the AWS alert inbox. Treat these as unreleased development artifacts: they carry no npm registry integrity record and no published changelog.
+That writes five `0.3.0` tarballs to `dist/packages`, which can be installed with `file:` paths. Whichever method you use, keep the modules, the backend, and the common package on the same 0.3.0 version.
 
 ## API
 

@@ -18,7 +18,7 @@ Browser verification exercised all six fixture workflows using the shared React 
 
 ## Optional module coverage
 
-The automated suite passes 120 tests across 11 files. The development 0.3.0 packages were also installed as five tarballs in the real Backstage host described below. AWS transport was simulated with an SNS envelope injected into the real Events service; no live AWS account, SQS queue, SNS topic, CloudWatch alarm, or GitHub App was configured.
+The automated suite passes 120 tests across 11 files. The 0.3.0 packages were also installed as five tarballs in the real Backstage host described below. AWS transport was simulated with an SNS envelope injected into the real Events service; no live AWS account, SQS queue, SNS topic, CloudWatch alarm, or GitHub App was configured.
 
 - AWS notifications: SNS envelope and CloudWatch field validation, exact `TopicArn` allowlisting, region recovery from the alarm ARN, notification severity mapping, save-before-detail-before-evaluate ordering on a shared scope, the native payload carrying no machine-readable metadata, the alert surviving a failed detail write, a provider failure stored as detail state, capacity release after a failed save and after a provider failure, a full ten-message batch evaluated without overflow, and no provider call when demo mode is on. One test reproduces the configuration defect behind the documented topic name: with the real `ConfigReader`, reading topic keys the way the AWS SQS module does (`topics.keys().map(topic => topics.getConfig(topic))`) throws for a dotted key such as `aws.cloudwatch` and succeeds for `aws-cloudwatch`.
 - AWS alert detail table: the packaged migration is exercised against a real in-memory SQLite database through Knex, covering table and index creation, a repeated migration, rollback, skipping migrations when the host disables them, upsert by notification scope, unknown scopes, a corrupt row that does not hide its neighbours, and retention removing only rows past 30 days during an ordinary write. A packaging test resolves the migration directory the way the backend does and asserts that `migrations` is in `files` and that the `./package.json` subpath export needed for that resolution is present.
@@ -56,7 +56,11 @@ The three 0.2.0 packed artifacts were also installed into a separate temporary n
 
 ## npm registry artifacts
 
-The public registry holds version 0.2.0 only. Nothing at 0.3.0 has been published, and the two optional module packages have never been published at any version.
+All five 0.3.0 packages are public on npm with the `latest` tag. They were downloaded using unauthenticated HTTPS requests, their SHA-512 integrity values were verified, and each archive matched the reviewed publication tarball byte for byte. The runtime, declarations, configuration schemas, and migration were unchanged from the artifacts used in the 0.3.0 Backstage host checks; the release updated package README text only. See [0.3.0 publication verification](npm-publication-0.3.0.json).
+
+A fresh npm consumer installed all five packages by name, without local package overrides, using an empty user npm configuration and `--legacy-peer-deps --ignore-scripts`. All installed versions were 0.3.0. The common, backend, Tech Insights, and AWS modules loaded through both CommonJS and ESM, the backend `/client` export loaded, and Backstage resolved the packaged AWS migration directory. Frontend browser behavior was verified separately in the Backstage host.
+
+The following records describe the earlier 0.2.0 publication:
 
 All three version 0.2.0 packages were downloaded anonymously from the public npm registry. Their registry SHA-512 integrity values were verified, and every runtime JavaScript, declaration, and backend configuration file matched the GitHub release artifacts used in the Backstage host test. See [publication verification](npm-publication.json).
 

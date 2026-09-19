@@ -5,7 +5,7 @@ Submitted as [Backstage PR #35788](https://github.com/backstage/backstage/pull/3
 <!-- Please describe what you added, and add a screenshot if possible.
      That makes it easier to understand the change so we can :shipit: faster. -->
 
-Lists [Jev Operations Support](https://github.com/namayasai/backstage-jev-operations-support), an independently maintained plugin for operational readiness checks, incident triage, change review, recommendations, and catalog reranking. The frontend, backend, and shared dependency are public on npm at version 0.2.0; [installation instructions](https://github.com/namayasai/backstage-jev-operations-support/blob/main/docs/installation.md) describe the required backend and TypeSafe API key.
+Lists [Jev Operations Support](https://github.com/namayasai/backstage-jev-operations-support), an independently maintained plugin providing Jev-powered operations support for runbook checks, change review, alert triage, and recommendations, with TechDocs, GitHub PR, and Tech Insights integrations. Version 0.3.0 publishes five packages on npm: the frontend, backend, and shared dependency, plus two optional backend modules for Tech Insights facts and CloudWatch alert integration. [Installation instructions](https://github.com/namayasai/backstage-jev-operations-support/blob/main/docs/installation.md) describe the required backend and TypeSafe API key; the optional modules are off until configured.
 
 Validation: `scripts/verify-plugin-directory.js` passed. All six plugin workflows were also exercised in a local Backstage 1.55.0 host against live Jev; [verification scope](https://github.com/namayasai/backstage-jev-operations-support/blob/main/docs/verification.md) is documented. This PR was prepared with AI assistance.
 

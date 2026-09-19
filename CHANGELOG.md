@@ -1,11 +1,11 @@
 # Changelog
 
-## 0.3.0 — unreleased
+## 0.3.0
 
-Development version. Not published to npm; 0.2.0 remains the public release.
+First release to publish all five packages: the frontend, backend, and shared packages plus the two optional backend modules. Still experimental.
 
 - Added a `/client` export to the backend package so optional modules reuse the same Jev transport, key, and model.
-- Added two optional backend module packages: `-tech-insights` (an opt-in Tech Insights fact retriever) and `-aws-notifications` (CloudWatch → SNS → SQS → Events → Notifications alerts with a receive-time Jev assessment). Both depend on the new `/client` export, so they cannot be installed against the released 0.2.0 backend.
+- Added two optional backend module packages: `-tech-insights` (an opt-in Tech Insights fact retriever) and `-aws-notifications` (CloudWatch → SNS → SQS → Events → Notifications alerts with a receive-time Jev assessment). Both depend on the new `/client` export, so they require the 0.3.0 backend rather than 0.2.0.
 - Added a signature-verified GitHub pull request webhook that evaluates changed Markdown documents.
 - Added an AWS alert inbox to the frontend, with a local manual re-check that is not written back to the notification.
 - The AWS module stores its structured alert context and receive-time Jev result in one plugin-owned table, `jev_aws_alert_details`, in the Backstage database the host already provides to this plugin. `@backstage/plugin-notifications-backend` (0.6.9) does not persist `payload.metadata`, so structured details require this table. Recipients, inbox identity, titles, alarm reasons, and read/saved state stay with standard Notifications; detail rows are cleaned up after 30 days during ordinary writes, and an alert without them stays visible.

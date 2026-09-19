@@ -2,7 +2,7 @@
 
 Six focused decision workflows for [Backstage](https://backstage.io), powered by [TypeSafe Jev](https://docs.typesafe.ai/introduction). Evaluate operational documentation, choose templates and teams, triage incidents, inspect changes, and rerank catalog candidates from one workbench.
 
-**Status: experimental. Public release 0.2.0; 0.3.0 is in development and is not published.** Version 0.2.0 was verified in a local Backstage 1.55.0 host with all six workflows calling the real Jev API. Includes an authenticated backend, legacy and new frontend extensions, a key-free fixture playground, and the opt-in integrations described below. No generated explanations or autonomous infrastructure changes.
+**Status: experimental. Current release 0.3.0, covering all five packages.** Version 0.2.0 was verified in a local Backstage 1.55.0 host with all six workflows calling the real Jev API, and 0.3.0 adds a separately recorded integration run. Includes an authenticated backend, legacy and new frontend extensions, a key-free fixture playground, and the opt-in integrations described below. No generated explanations or autonomous infrastructure changes.
 
 ![Jev Operations Support running inside Backstage 1.55.0](docs/backstage-workbench.png)
 
@@ -38,9 +38,9 @@ The repository's `.npmrc` uses `legacy-peer-deps` because Backstage's optional t
 
 ## Install in Backstage
 
-See [the installation guide](docs/installation.md) for package installation, frontend registration, the entity tab, permissions, and configuration. The frontend, backend, and shared packages are public on npm at 0.2.0; GitHub Release tarballs are also available. The shared package installs automatically with the frontend or backend. The [Plugin Directory submission](https://github.com/backstage/backstage/pull/35788) is awaiting upstream review.
+See [the installation guide](docs/installation.md) for package installation, frontend registration, the entity tab, permissions, and configuration. All five packages are published on npm at 0.3.0: frontend, backend, shared, and the two optional backend modules. GitHub Release tarballs are also available. The shared package installs automatically with the frontend or backend. The [Plugin Directory submission](https://github.com/backstage/backstage/pull/35788) is awaiting upstream review.
 
-The two optional backend modules are built from this repository at 0.3.0 and have no npm release yet, because they depend on a backend `/client` export that 0.2.0 does not have. Install them from local tarballs; see [optional modules](docs/installation.md#5-optional-modules).
+The two optional backend modules are installed by name alongside the matching 0.3.0 backend, since they import its `/client` export; see [optional modules](docs/installation.md#5-optional-modules).
 
 Backend configuration:
 
