@@ -1,10 +1,12 @@
-# Jev for Backstage
+# Jev Operations Support for Backstage
 
 Six focused decision workflows for [Backstage](https://backstage.io), powered by [TypeSafe Jev](https://docs.typesafe.ai/introduction). Evaluate operational documentation, choose templates and teams, triage incidents, inspect changes, and rerank catalog candidates from one workbench.
 
-**Status: experimental v0.1.0.** Real Jev integration, authenticated Backstage backend, legacy and new frontend extensions, and a key-free fixture playground. No generated explanations or autonomous infrastructure changes.
+**Status: experimental v0.2.0.** Verified in a local Backstage 1.55.0 host with all six workflows calling the real Jev API. Includes an authenticated backend, legacy and new frontend extensions, and a key-free fixture playground. No generated explanations or autonomous infrastructure changes.
 
-![Jev decision workbench, showing the explicitly labeled fixture playground](docs/workbench.png)
+![Jev Operations Support running inside Backstage 1.55.0](docs/backstage-workbench.png)
+
+![Live Jev readiness results inside Backstage](docs/backstage-result.png)
 
 ## Workflows
 
@@ -21,11 +23,11 @@ Template, ownership, and search workflows can load up to 20 entries through the 
 
 ## Try the interface
 
-Node.js 22 or newer:
+Node.js 22 is the verified runtime:
 
 ```sh
-git clone https://github.com/namayasai/backstage-jev.git
-cd backstage-jev
+git clone https://github.com/namayasai/backstage-jev-operations-support.git
+cd backstage-jev-operations-support
 npm ci
 npm run dev
 ```
@@ -41,7 +43,7 @@ See [the installation guide](docs/installation.md) for package installation, fro
 Backend configuration:
 
 ```yaml
-jev:
+jevOperationsSupport:
   apiKey: ${TYPESAFE_API_KEY}
   model: jev-1.13.0
   confidenceThreshold: 0.8
@@ -49,7 +51,7 @@ jev:
   requestsPerMinute: 10
 ```
 
-The key is marked secret in the Backstage config schema. It stays on the backend. Calls go only to `https://api.typesafe.ai/v1/systemone`, with redirects rejected. Requests require a signed-in user and the `jev.evaluate` permission. The plugin does not store submitted documents or results.
+The key is marked secret in the Backstage config schema. It stays on the backend. Calls go only to `https://api.typesafe.ai/v1/systemone`, with redirects rejected. Requests require a signed-in user and the `jev-operations-support.evaluate` permission. The plugin does not store submitted documents or results.
 
 ## Development and verification
 
@@ -63,12 +65,14 @@ Alternatively, set `TYPESAFE_API_KEY` in your environment and run `npm run test:
 
 See [verification details](docs/verification.md) and the [live smoke report](docs/live-smoke.json). Small synthetic examples establish connectivity and basic behavior, not production accuracy.
 
+The [Backstage host report](docs/backstage-host-smoke.json) records browser-to-backend-to-Jev checks for all six workflows. [Publishing status and the directory submission procedure](docs/publishing.md) are tracked separately.
+
 ## Structure
 
 ```text
-plugins/jev-common/   Typed workflows, input/output validation, thresholds, permission
-plugins/jev-backend/  Authenticated API, rate limits, Jev transport, configuration
-plugins/jev/          Workbench, catalog adapter, legacy and new frontend extensions
+plugins/jev-operations-support-common/   Typed workflows, input/output validation, thresholds, permission
+plugins/jev-operations-support-backend/  Authenticated API, rate limits, Jev transport, configuration
+plugins/jev-operations-support/          Workbench, catalog adapter, legacy and new frontend extensions
 examples/playground/ Standalone fixture UI using the same workbench component
 ```
 

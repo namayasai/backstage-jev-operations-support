@@ -1,9 +1,9 @@
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/namayasai/backstage-jev.git"
+    "url": "https://github.com/namayasai/backstage-jev-operations-support.git"
   },
   "publishConfig": {
     "access": "public"
@@ -24,7 +24,7 @@
     }
   },
   "sideEffects": false,
-  "name": "@namayasai/backstage-plugin-jev-common",
+  "name": "@namayasai/backstage-plugin-jev-operations-support-common",
   "description": "Shared Jev workflows, validation and permissions",
   "backstage": {
     "role": "common-library"
@@ -35,5 +35,19 @@
   "dependencies": {
     "zod": "^3.24.0",
     "@backstage/plugin-permission-common": "^0.9.11"
+  },
+  "homepage": "https://github.com/namayasai/backstage-jev-operations-support#readme",
+  "bugs": {
+    "url": "https://github.com/namayasai/backstage-jev-operations-support/issues"
+  },
+  "keywords": [
+    "backstage",
+    "backstage-plugin",
+    "jev",
+    "operations",
+    "platform-engineering"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }

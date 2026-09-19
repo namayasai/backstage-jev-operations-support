@@ -2,7 +2,7 @@ import { useApi, useRouteRef, discoveryApiRef, fetchApiRef } from '@backstage/co
 import { catalogApiRef, useEntity, entityRouteRef } from '@backstage/plugin-catalog-react';
 import { stringifyEntityRef, parseEntityRef } from '@backstage/catalog-model';
 import { Link } from 'react-router-dom';
-import type { EvaluationRequest, EvaluationResult, WorkflowId } from '@namayasai/backstage-plugin-jev-common';
+import type { EvaluationRequest, EvaluationResult, WorkflowId } from '@namayasai/backstage-plugin-jev-operations-support-common';
 import { JevWorkbench } from './Workbench';
 
 export function JevPage({ initialText }: { initialText?: string }) {
@@ -11,7 +11,7 @@ export function JevPage({ initialText }: { initialText?: string }) {
   const catalog = useApi(catalogApiRef);
   const entityRoute = useRouteRef(entityRouteRef);
   async function evaluate(input: EvaluationRequest): Promise<EvaluationResult> {
-    const url = await discovery.getBaseUrl('jev');
+    const url = await discovery.getBaseUrl('jev-operations-support');
     const response = await fetchApi.fetch(`${url}/evaluate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error ?? `Evaluation failed (HTTP ${response.status}).`);

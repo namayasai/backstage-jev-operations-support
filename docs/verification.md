@@ -8,9 +8,17 @@ The live smoke harness makes eight calls with synthetic English input: one per w
 
 The report in [live-smoke.json](live-smoke.json) includes the actual model ID, selected values, probabilities where available, confidence, and timestamps. Credentials and provider error bodies are excluded.
 
-Browser verification exercised all six fixture workflows using the real shared React workbench. The screenshot in [workbench.png](workbench.png) is from this explicitly labeled fixture UI.
+Browser verification exercised all six fixture workflows using the shared React workbench. Current screenshots show the [real Backstage host](backstage-workbench.png) and a [live Jev result](backstage-result.png).
 
-Backstage integration adapters are tested with mocked host APIs, including catalog filtering, the authenticated fetch adapter, catalog links, and clearing state on entity navigation. New frontend and backend extension types compile against the installed Backstage libraries. **A complete production Backstage host with your identity provider and permission policy has not been deployed or end-to-end verified.** The standalone playground is not a substitute for that integration check.
+## Real Backstage host
+
+Version 0.2.0 was installed as packed artifacts in a separate **Backstage 1.55.0** host generated with `@backstage/create-app@0.9.2`, using Node.js 22.23.2 and Yarn 4.13.0. The host used the new frontend system, the normal auth/catalog/permission backend plugins, a development guest identity, an allow-all permission policy, and an in-memory SQLite database. Only official synthetic example catalog entries were loaded.
+
+All six workflows were exercised through the actual Backstage browser UI and called the live `jev-1.13.0` API. Template, ownership, and search candidates came from the real Catalog API. A result link opened the corresponding catalog entity, whose Operations Support tab correctly seeded the entity context. An unauthenticated HTTP evaluation request returned **401**. See [the recorded host checks](backstage-host-smoke.json).
+
+This verifies a local integration, not a production identity provider, an organization's permission policy, or model accuracy. Host-specific production validation remains the installer's responsibility. The legacy frontend adapter is covered by component/type checks; this end-to-end run used the new frontend system.
+
+Backstage integration adapters also have automated tests for catalog filtering, the host fetch API, catalog links, and clearing state on entity navigation.
 
 Independent review found two defects before release: entity state survived navigation, and contradictory provider decisions were accepted. Both were corrected and regression tested.
 

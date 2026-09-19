@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createJevClient } from './client';
-import type { JevRequest } from '@namayasai/backstage-plugin-jev-common';
+import type { JevRequest } from '@namayasai/backstage-plugin-jev-operations-support-common';
 
 const request: JevRequest = { state: { context: 'Example document', candidates: [] }, questions: { ready: { type: 'noul', instructions: 'Is this ready?', criteria: { true: 'Ready', false: 'Not ready' } } } };
 describe('Jev transport', () => {

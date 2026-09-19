@@ -3,7 +3,7 @@ import { createPermission } from '@backstage/plugin-permission-common';
 
 export const workflowIds = ['readiness', 'templates', 'ownership', 'incident', 'change-risk', 'search'] as const;
 export type WorkflowId = typeof workflowIds[number];
-export const jevEvaluatePermission = createPermission({ name: 'jev.evaluate', attributes: { action: 'create' } });
+export const jevEvaluatePermission = createPermission({ name: 'jev-operations-support.evaluate', attributes: { action: 'create' } });
 
 export const candidateSchema = z.object({
   id: z.string().trim().min(1).max(200),

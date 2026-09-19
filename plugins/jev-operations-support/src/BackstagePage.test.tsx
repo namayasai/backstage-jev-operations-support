@@ -2,11 +2,11 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { demoEvaluation } from '@namayasai/backstage-plugin-jev-common';
+import { demoEvaluation } from '@namayasai/backstage-plugin-jev-operations-support-common';
 
 const mocks = vi.hoisted(() => ({
   entity: { apiVersion: 'backstage.io/v1alpha1', kind: 'Component', metadata: { name: 'checkout', description: 'Payment service' } },
-  query: vi.fn(), fetch: vi.fn(), discovery: vi.fn().mockResolvedValue('https://backstage.example/api/jev'),
+  query: vi.fn(), fetch: vi.fn(), discovery: vi.fn().mockResolvedValue('https://backstage.example/api/jev-operations-support'),
 }));
 vi.mock('@backstage/core-plugin-api', () => ({
   discoveryApiRef: 'discovery', fetchApiRef: 'fetch',
@@ -15,7 +15,7 @@ vi.mock('@backstage/core-plugin-api', () => ({
 }));
 vi.mock('@backstage/plugin-catalog-react', () => ({ catalogApiRef: 'catalog', entityRouteRef: 'entity', useEntity: () => ({ entity: mocks.entity }) }));
 import { EntityJevContent, JevPage } from './BackstagePage';
-beforeEach(() => { mocks.discovery.mockResolvedValue('https://backstage.example/api/jev'); });
+beforeEach(() => { mocks.discovery.mockResolvedValue('https://backstage.example/api/jev-operations-support'); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('Backstage integration adapters', () => {
@@ -32,7 +32,7 @@ describe('Backstage integration adapters', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Evaluate with Jev →' }));
     const link = await screen.findByRole('link', { name: 'Open Node service in catalog →' });
     expect(link.getAttribute('href')).toBe('/catalog/default/template/node-service');
-    expect(mocks.fetch.mock.calls[0][0]).toBe('https://backstage.example/api/jev/evaluate');
+    expect(mocks.fetch.mock.calls[0][0]).toBe('https://backstage.example/api/jev-operations-support/evaluate');
     expect(screen.getByText(/Backend demo mode is enabled/)).toBeTruthy();
   });
   it('drops the old text and results when the catalog entity changes', async () => {

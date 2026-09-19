@@ -1,5 +1,5 @@
 export interface Config {
-  jev?: {
+  jevOperationsSupport?: {
     /** TypeSafe API key. @visibility secret */
     apiKey?: string;
     /** Exact model ID. Defaults to jev-1.13.0. @visibility backend */

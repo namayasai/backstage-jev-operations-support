@@ -1,0 +1,72 @@
+{
+  "testedAt": "2026-09-19T07:32:45.086Z",
+  "backstageVersion": "1.55.0",
+  "createAppVersion": "0.9.2",
+  "frontend": "new frontend system",
+  "authentication": "development guest provider issuing a Backstage user identity",
+  "model": "jev-1.13.0",
+  "artifactVersion": "0.2.0",
+  "workflows": [
+    {
+      "workflow": "Operational readiness",
+      "model": "jev-1.13.0",
+      "findings": 4
+    },
+    {
+      "workflow": "Template advisor",
+      "results": [
+        "Suggested software template"
+      ],
+      "model": "jev-1.13.0"
+    },
+    {
+      "workflow": "Owner finder",
+      "results": [
+        "Suggested responsible team"
+      ],
+      "model": "jev-1.13.0"
+    },
+    {
+      "workflow": "Incident triage",
+      "results": [
+        "Reported impact",
+        "Investigation area"
+      ],
+      "model": "jev-1.13.0"
+    },
+    {
+      "workflow": "Change review",
+      "results": [
+        "Compatibility concern",
+        "Data migration concern",
+        "Access control concern",
+        "Rollback documented"
+      ],
+      "model": "jev-1.13.0"
+    },
+    {
+      "workflow": "Semantic reranking",
+      "results": [
+        "example-grpc-api",
+        "example-website",
+        "Example Node.js Template",
+        "examples",
+        "generated-859bfc6e089cfdafbe60d87c81a0b65959b721d5",
+        "guest",
+        "generated-1ffeb7207f84452ec757f16cde0c9c4cf8fe5030",
+        "guests",
+        "generated-176ad8a0dff3ae760460367377bdacadc954260a"
+      ],
+      "model": "jev-1.13.0"
+    }
+  ],
+  "catalogCandidates": "Loaded through the real Catalog API from official synthetic example entities",
+  "catalogLinkAndEntityTab": "Passed: clicked example-website result link, opened Operations Support tab, and saw component:default/example-website context",
+  "unauthenticatedEvaluationStatus": 401,
+  "limitations": [
+    "Local development host with guest authentication and an allow-all permission policy.",
+    "Not a production identity-provider or authorization-policy audit.",
+    "English synthetic content; not an accuracy benchmark."
+  ],
+  "sidebarNavigation": "Passed after registering page route reference and icon"
+}

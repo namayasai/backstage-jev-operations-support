@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { demoEvaluation } from '@namayasai/backstage-plugin-jev-common';
+import { demoEvaluation } from '@namayasai/backstage-plugin-jev-operations-support-common';
 import { JevWorkbench } from './Workbench';
 
 afterEach(cleanup);

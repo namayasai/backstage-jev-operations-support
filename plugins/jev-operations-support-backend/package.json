@@ -1,9 +1,9 @@
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/namayasai/backstage-jev.git"
+    "url": "https://github.com/namayasai/backstage-jev-operations-support.git"
   },
   "publishConfig": {
     "access": "public"
@@ -24,21 +24,35 @@
     }
   },
   "sideEffects": false,
-  "name": "@namayasai/backstage-plugin-jev-backend",
+  "name": "@namayasai/backstage-plugin-jev-operations-support-backend",
   "description": "Authenticated Jev decision backend for Backstage",
   "backstage": {
     "role": "backend-plugin",
-    "pluginId": "jev"
+    "pluginId": "jev-operations-support"
   },
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean"
   },
   "dependencies": {
-    "@namayasai/backstage-plugin-jev-common": "0.1.0",
+    "@namayasai/backstage-plugin-jev-operations-support-common": "0.2.0",
     "@backstage/backend-plugin-api": "^1.10.1",
     "@backstage/plugin-permission-common": "^0.9.11",
     "express": "^4.21.2",
     "zod": "^3.24.0"
   },
-  "configSchema": "config.d.ts"
+  "configSchema": "config.d.ts",
+  "homepage": "https://github.com/namayasai/backstage-jev-operations-support#readme",
+  "bugs": {
+    "url": "https://github.com/namayasai/backstage-jev-operations-support/issues"
+  },
+  "keywords": [
+    "backstage",
+    "backstage-plugin",
+    "jev",
+    "operations",
+    "platform-engineering"
+  ],
+  "engines": {
+    "node": ">=22"
+  }
 }

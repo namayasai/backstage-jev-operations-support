@@ -16,8 +16,8 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@namayasai/backstage-plugin-jev-common": [
-        "plugins/jev-common/src/index.ts"
+      "@namayasai/backstage-plugin-jev-operations-support-common": [
+        "plugins/jev-operations-support-common/src/index.ts"
       ]
     }
   },

@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react';
-import { evaluationRequestSchema, workflows, sampleText, sampleCandidates, type Candidate, type EvaluationRequest, type EvaluationResult, type WorkflowId } from '@namayasai/backstage-plugin-jev-common';
+import { evaluationRequestSchema, workflows, sampleText, sampleCandidates, type Candidate, type EvaluationRequest, type EvaluationResult, type WorkflowId } from '@namayasai/backstage-plugin-jev-operations-support-common';
 
 export interface WorkbenchProps {
   evaluate: (request: EvaluationRequest) => Promise<EvaluationResult>;
@@ -63,7 +63,7 @@ export function JevWorkbench({ evaluate, loadCandidates, renderCandidateLink, in
   }
   return <main className="jev">
     <style>{styles}</style>
-    <header className="jev-top"><span className="jev-brand">JEV / BACKSTAGE</span><span className="jev-pill">{demo ? 'FIXTURE PLAYGROUND' : 'DECISION WORKBENCH'}</span></header>
+    <header className="jev-top"><span className="jev-brand">JEV / OPERATIONS SUPPORT</span><span className="jev-pill">{demo ? 'FIXTURE PLAYGROUND' : 'DECISION WORKBENCH'}</span></header>
     <div className="jev-intro"><h1>Small decisions.<br />A clearer path forward.</h1><p>Six focused workflows for your developer platform. Bring the context, inspect the evidence, and keep uncertainty visible.</p></div>
     {demo && <div className="jev-banner" role="note">Demo mode — results are fixed illustrative examples. No API call is made, and your text is not evaluated.</div>}
     <div className="jev-grid">

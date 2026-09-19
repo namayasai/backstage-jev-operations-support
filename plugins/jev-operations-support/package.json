@@ -1,9 +1,9 @@
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/namayasai/backstage-jev.git"
+    "url": "https://github.com/namayasai/backstage-jev-operations-support.git"
   },
   "publishConfig": {
     "access": "public"
@@ -29,22 +29,22 @@
     }
   },
   "sideEffects": false,
-  "name": "@namayasai/backstage-plugin-jev",
+  "name": "@namayasai/backstage-plugin-jev-operations-support",
   "description": "Jev decision workbench and entity tab for Backstage",
   "backstage": {
     "role": "frontend-plugin",
-    "pluginId": "jev",
+    "pluginId": "jev-operations-support",
     "pluginPackages": [
-      "@namayasai/backstage-plugin-jev",
-      "@namayasai/backstage-plugin-jev-backend",
-      "@namayasai/backstage-plugin-jev-common"
+      "@namayasai/backstage-plugin-jev-operations-support",
+      "@namayasai/backstage-plugin-jev-operations-support-backend",
+      "@namayasai/backstage-plugin-jev-operations-support-common"
     ]
   },
   "scripts": {
     "build": "tsup src/index.ts src/alpha.tsx --format cjs,esm --dts --clean"
   },
   "dependencies": {
-    "@namayasai/backstage-plugin-jev-common": "0.1.0",
+    "@namayasai/backstage-plugin-jev-operations-support-common": "0.2.0",
     "@backstage/core-plugin-api": "^1.12.10",
     "@backstage/frontend-plugin-api": "^0.18.1",
     "@backstage/plugin-catalog-react": "^3.2.3",
@@ -54,5 +54,19 @@
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-router-dom": "^6.30.2"
+  },
+  "homepage": "https://github.com/namayasai/backstage-jev-operations-support#readme",
+  "bugs": {
+    "url": "https://github.com/namayasai/backstage-jev-operations-support/issues"
+  },
+  "keywords": [
+    "backstage",
+    "backstage-plugin",
+    "jev",
+    "operations",
+    "platform-engineering"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }

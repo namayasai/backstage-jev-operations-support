@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
-import { createJevClient } from '../plugins/jev-backend/src/client';
-import { buildEvaluation, evaluationRequestSchema, sampleText, sampleCandidates, summarize, workflowIds, type EvaluationRequest } from '../plugins/jev-common/src';
+import { createJevClient } from '../plugins/jev-operations-support-backend/src/client';
+import { buildEvaluation, evaluationRequestSchema, sampleText, sampleCandidates, summarize, workflowIds, type EvaluationRequest } from '../plugins/jev-operations-support-common/src';
 
 // The key is read directly into memory. Never write it, include it in reports, or log provider bodies.
 async function main() {

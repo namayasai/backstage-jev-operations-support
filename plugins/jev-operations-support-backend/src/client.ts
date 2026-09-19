@@ -1,4 +1,4 @@
-import { type JevRequest, type JevResponse, validateResponse } from '@namayasai/backstage-plugin-jev-common';
+import { type JevRequest, type JevResponse, validateResponse } from '@namayasai/backstage-plugin-jev-operations-support-common';
 
 export class ProviderError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }

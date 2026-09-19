@@ -1,7 +1,7 @@
 import express from 'express';
 import type { HttpAuthService, PermissionsService } from '@backstage/backend-plugin-api';
 import { AuthorizeResult } from '@backstage/plugin-permission-common';
-import { evaluationRequestSchema, buildEvaluation, summarize, demoEvaluation, jevEvaluatePermission, type JevRequest, type JevResponse } from '@namayasai/backstage-plugin-jev-common';
+import { evaluationRequestSchema, buildEvaluation, summarize, demoEvaluation, jevEvaluatePermission, type JevRequest, type JevResponse } from '@namayasai/backstage-plugin-jev-operations-support-common';
 import { ProviderError } from './client';
 
 export interface RouterOptions {
@@ -38,7 +38,7 @@ export function createRouter(options: RouterOptions): express.Router {
       }
       bucket.count++; buckets.set(key, bucket);
       if (options.demoMode) { res.json(demoEvaluation(parsed.data)); return; }
-      if (!options.evaluate) { res.status(503).json({ error: 'Jev is not configured. Set jev.apiKey in the backend.' }); return; }
+      if (!options.evaluate) { res.status(503).json({ error: 'Jev is not configured. Set jevOperationsSupport.apiKey in the backend.' }); return; }
       inFlight++;
       try {
         const { request, checks } = buildEvaluation(parsed.data);
