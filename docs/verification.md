@@ -27,3 +27,5 @@ The three packed artifacts were also installed into a separate temporary npm con
 ## npm registry artifacts
 
 All three version 0.2.0 packages were downloaded anonymously from the public npm registry. Their registry SHA-512 integrity values were verified, and every runtime JavaScript, declaration, and backend configuration file matched the GitHub release artifacts used in the Backstage host test. See [publication verification](npm-publication.json).
+
+A separate npm consumer installed the frontend and backend by name, with the common package resolved transitively from npm and no custom plugin overrides. Installation used `--legacy-peer-deps` for Backstage peer dependencies. All three installed versions were 0.2.0; the common and backend exports loaded successfully.

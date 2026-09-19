@@ -36,5 +36,29 @@
       "artifact": "namayasai-backstage-plugin-jev-operations-support-common-0.2.0.tgz",
       "matchingRuntimeFiles": 4
     }
-  ]
+  ],
+  "installation": {
+    "verifiedAt": "2026-09-19T08:25:47.111Z",
+    "packageManager": "npm",
+    "peerDependencyMode": "legacy-peer-deps (Backstage host peers supplied separately)",
+    "customResolutionsForPlugin": false,
+    "packages": [
+      {
+        "name": "@namayasai/backstage-plugin-jev-operations-support",
+        "version": "0.2.0",
+        "resolvedFromPublicRegistry": true
+      },
+      {
+        "name": "@namayasai/backstage-plugin-jev-operations-support-backend",
+        "version": "0.2.0",
+        "resolvedFromPublicRegistry": true
+      },
+      {
+        "name": "@namayasai/backstage-plugin-jev-operations-support-common",
+        "version": "0.2.0",
+        "resolvedFromPublicRegistry": true
+      }
+    ],
+    "commonAndBackendLoadPassed": true
+  }
 }
