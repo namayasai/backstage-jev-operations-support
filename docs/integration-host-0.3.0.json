@@ -278,5 +278,82 @@
     "techInsightsBackend": "3.1.0",
     "techInsightsJsonfc": "0.10.0",
     "sqsConfigCompatibility": "0.4.26"
+  },
+  "githubWebhookLive": {
+    "pullRequest": "https://github.com/namayasai/backstage-jev-operations-support/pull/1",
+    "headSha": "aa6af3696dbf55129da1677e57555307d44f93aa",
+    "transport": "Locally signed synthetic GitHub delivery; real GitHub PR metadata/content and live Jev. No GitHub webhook registration was created.",
+    "results": [
+      {
+        "attempt": 1,
+        "http": 200,
+        "elapsedMs": 2842,
+        "response": {
+          "status": "evaluated",
+          "deliveryId": "review-pr1-aa6af3696dbf",
+          "repository": "namayasai/backstage-jev-operations-support",
+          "pullRequest": 1,
+          "documents": [
+            {
+              "path": "README.md",
+              "result": {
+                "workflow": "readiness",
+                "model": "jev-1.13.0",
+                "evaluatedAt": "2026-09-19T12:06:02.165Z",
+                "mode": "live",
+                "findings": [
+                  {
+                    "id": "startup",
+                    "title": "Startup procedure",
+                    "statement": "Does the document describe concrete commands or steps to start this service?",
+                    "kind": "noul",
+                    "guidance": "The supplied context supports this check. Verify the documented procedure works in practice.",
+                    "value": 0.98,
+                    "status": "pass"
+                  },
+                  {
+                    "id": "health",
+                    "title": "Health verification",
+                    "statement": "Does the document explain an observable check that verifies this service is healthy?",
+                    "kind": "noul",
+                    "guidance": "Document a health endpoint or an observable success condition.",
+                    "value": 0.7,
+                    "status": "review"
+                  },
+                  {
+                    "id": "rollback",
+                    "title": "Rollback procedure",
+                    "statement": "Does the document describe concrete steps to restore a previous working deployment?",
+                    "kind": "noul",
+                    "guidance": "Add rollback steps and a way to verify recovery.",
+                    "value": 0.12,
+                    "status": "attention"
+                  },
+                  {
+                    "id": "escalation",
+                    "title": "Escalation path",
+                    "statement": "Does the document identify a specific team or contact channel for operational incidents?",
+                    "kind": "noul",
+                    "guidance": "Name an escalation team and a usable contact channel.",
+                    "value": 0.09,
+                    "status": "attention"
+                  }
+                ],
+                "needsReview": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "attempt": 2,
+        "http": 200,
+        "elapsedMs": 4,
+        "response": {
+          "status": "duplicate",
+          "deliveryId": "review-pr1-aa6af3696dbf"
+        }
+      }
+    ]
   }
 }
