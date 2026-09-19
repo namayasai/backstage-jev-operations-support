@@ -1,0 +1,40 @@
+{
+  "verifiedAt": "2026-09-19T08:22:39.159Z",
+  "packages": [
+    {
+      "name": "@namayasai/backstage-plugin-jev-operations-support-common",
+      "version": "0.2.0",
+      "tarball": "https://registry.npmjs.org/@namayasai/backstage-plugin-jev-operations-support-common/-/backstage-plugin-jev-operations-support-common-0.2.0.tgz",
+      "integrity": "sha512-t4kQ/4WUPX6GxTCFF2O3XG/U2ziuWMmyRORXFwiAi/l9wtfDtkdkUjHUexj6Q1DaAXFpddsPCZSWLX68f4ywpg==",
+      "anonymousDownload": true
+    },
+    {
+      "name": "@namayasai/backstage-plugin-jev-operations-support-backend",
+      "version": "0.2.0",
+      "tarball": "https://registry.npmjs.org/@namayasai/backstage-plugin-jev-operations-support-backend/-/backstage-plugin-jev-operations-support-backend-0.2.0.tgz",
+      "integrity": "sha512-7JnTKGb9PR+h4fovBDTIuMb1n1rnFKSQ5dUntA71WdWvalHzSv0TAjakcRnLxNYqybY6LF1Jy0F+X2MpMm/Oxw==",
+      "anonymousDownload": true
+    },
+    {
+      "name": "@namayasai/backstage-plugin-jev-operations-support",
+      "version": "0.2.0",
+      "tarball": "https://registry.npmjs.org/@namayasai/backstage-plugin-jev-operations-support/-/backstage-plugin-jev-operations-support-0.2.0.tgz",
+      "integrity": "sha512-bLOnu/ZWzg2XNnj2DQ0OVOXBi05WdUiThy7IAwVgkUHd8VBuc6sPlKq6d0l7IL0zLIisoP6Der1DNJPaSpKiJw==",
+      "anonymousDownload": true
+    }
+  ],
+  "releaseArtifactComparison": [
+    {
+      "artifact": "namayasai-backstage-plugin-jev-operations-support-backend-0.2.0.tgz",
+      "matchingRuntimeFiles": 5
+    },
+    {
+      "artifact": "namayasai-backstage-plugin-jev-operations-support-0.2.0.tgz",
+      "matchingRuntimeFiles": 10
+    },
+    {
+      "artifact": "namayasai-backstage-plugin-jev-operations-support-common-0.2.0.tgz",
+      "matchingRuntimeFiles": 4
+    }
+  ]
+}

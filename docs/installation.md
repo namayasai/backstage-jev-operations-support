@@ -4,26 +4,23 @@ This release has been exercised on Backstage 1.55.0, Node.js 22.23.2, React 18, 
 
 ## 1. Install packages
 
-Download the three tarballs from the [v0.2.0 release](https://github.com/namayasai/backstage-jev-operations-support/releases/tag/v0.2.0), or build them yourself with `npm ci && npm run pack:plugins`.
-
-For a Yarn-based Backstage application, add a resolution for the shared package in the application's root `package.json` (merge with any existing resolutions):
-
-```json
-{
-  "resolutions": {
-    "@namayasai/backstage-plugin-jev-operations-support-common": "https://github.com/namayasai/backstage-jev-operations-support/releases/download/v0.2.0/namayasai-backstage-plugin-jev-operations-support-common-0.2.0.tgz"
-  }
-}
-```
-
-Then run from your Backstage root:
+The three packages are public on npm. From your Backstage root, add the frontend and backend packages:
 
 ```sh
-yarn --cwd packages/app add @namayasai/backstage-plugin-jev-operations-support@https://github.com/namayasai/backstage-jev-operations-support/releases/download/v0.2.0/namayasai-backstage-plugin-jev-operations-support-0.2.0.tgz
-yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-backend@https://github.com/namayasai/backstage-jev-operations-support/releases/download/v0.2.0/namayasai-backstage-plugin-jev-operations-support-backend-0.2.0.tgz
+yarn --cwd packages/app add @namayasai/backstage-plugin-jev-operations-support@^0.2.0
+yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-backend@^0.2.0
 ```
 
-The resolution is necessary because the frontend and backend depend on the shared package, which is not on npm. For local tarballs, use an absolute `file:/path/to/…tgz` resolution instead. The host provides React, React DOM, and React Router 6. For npm-based hosts, use root `overrides` with the shared tarball URL in place of Yarn `resolutions`.
+The shared `@namayasai/backstage-plugin-jev-operations-support-common` package is installed automatically. No custom tarball resolution is required. The host provides React 18, React DOM, and React Router 6.
+
+For an npm-based workspace:
+
+```sh
+npm install --workspace packages/app @namayasai/backstage-plugin-jev-operations-support@^0.2.0
+npm install --workspace packages/backend @namayasai/backstage-plugin-jev-operations-support-backend@^0.2.0
+```
+
+Source and reproducible tarballs are also available from the [v0.2.0 release](https://github.com/namayasai/backstage-jev-operations-support/releases/tag/v0.2.0).
 
 ## 2. Register the backend
 
@@ -65,7 +62,7 @@ const app = createApp({
 });
 ```
 
-This adds `/jev-operations-support` and a **Operations Support** entity tab. Preserve the app's existing catalog frontend feature, Catalog API, and route bindings. If your feature discovery already installs this plugin, use one registration mechanism rather than installing it twice.
+This adds `/jev-operations-support` and an **Operations Support** entity tab. Preserve the app's existing catalog frontend feature, Catalog API, and route bindings. If your feature discovery already installs this plugin, use one registration mechanism rather than installing it twice.
 
 ### Legacy frontend system
 

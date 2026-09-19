@@ -1,10 +1,10 @@
 # Publishing and directory submission
 
-The repository and GitHub release artifacts are public. npm publication is currently pending npm authentication on the publishing machine. Do not submit the directory PR until all three packages are publicly readable from the npm registry.
+Version 0.2.0 of the frontend, backend, and common packages is public on npm. GitHub source and release artifacts remain available. The Plugin Directory entry is submitted separately for upstream review.
 
 ## npm publication
 
-After logging into the intended npm account, confirm access to the `@namayasai` scope. Run the checks and publish the shared dependency before its consumers:
+For future releases, increment the package versions, run the checks, and publish the shared dependency before its consumers. Confirm that the logged-in npm account can publish to the `@namayasai` scope:
 
 ```sh
 npm whoami
@@ -14,14 +14,14 @@ npm publish --workspace plugins/jev-operations-support-backend --access public
 npm publish --workspace plugins/jev-operations-support --access public
 ```
 
-Complete any npm account or second-factor verification through npm's own login flow. Do not put credentials in this repository. Once published, verify each package at version `0.2.0` with `npm view`, then change the installation guide to use normal package names:
+Complete any npm account or second-factor verification through npm's own login flow. Do not put credentials in this repository. Verify the new version with `npm view` and an installation that resolves dependencies from the public registry. Consumers can install the current release by name:
 
 ```sh
 yarn --cwd packages/app add @namayasai/backstage-plugin-jev-operations-support
 yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-backend
 ```
 
-The published common package removes the need for the tarball resolution. Update the README's publication status at the same time.
+The published common package removes the need for the tarball resolution. Do not republish an existing version; npm versions are immutable.
 
 ## Backstage Plugin Directory
 

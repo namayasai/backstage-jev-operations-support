@@ -23,3 +23,7 @@ Backstage integration adapters also have automated tests for catalog filtering, 
 Independent review found two defects before release: entity state survived navigation, and contradictory provider decisions were accepted. Both were corrected and regression tested.
 
 The three packed artifacts were also installed into a separate temporary npm consumer with a local shared-package override. This checks package resolution independently of the development workspaces.
+
+## npm registry artifacts
+
+All three version 0.2.0 packages were downloaded anonymously from the public npm registry. Their registry SHA-512 integrity values were verified, and every runtime JavaScript, declaration, and backend configuration file matched the GitHub release artifacts used in the Backstage host test. See [publication verification](npm-publication.json).
