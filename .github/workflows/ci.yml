@@ -1,4 +1,3 @@
-# Example; the active workflow is .github/workflows/ci.yml.
 name: CI
 
 on:

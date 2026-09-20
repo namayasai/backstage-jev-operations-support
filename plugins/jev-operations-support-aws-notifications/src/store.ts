@@ -6,8 +6,9 @@ import type { JevAwsAlertDetails } from './index';
 export const awsAlertDetailsTable = 'jev_aws_alert_details';
 /** A dedicated ledger keeps this module's migration independent of the parent plugin. */
 export const awsAlertDetailsMigrationsTable = 'jev_aws_alert_details_migrations';
-/** Detail rows older than this are removed during ordinary writes; the alert itself is never deleted. */
+/** Details expire this many days after their last write; the alert itself is never deleted. */
 export const awsAlertDetailsRetentionDays = 30;
+const cleanupBatchSize = 500;
 /** A page of alerts is bounded, so a lookup never builds an unbounded `IN (...)` list. */
 const maxScopesPerRead = 200;
 
@@ -40,7 +41,7 @@ export function awsAlertDetailsMigrationsDirectory(): string {
 export async function createAwsAlertDetailsStore(
   database: DatabaseService,
   options: AwsAlertDetailsStoreOptions = {},
-): Promise<AwsAlertDetailsStore> {
+): Promise<AwsAlertDetailsStore & { pruneExpired(): Promise<number> }> {
   const client = await database.getClient();
   if (!database.migrations?.skip) {
     await client.migrate.latest({
@@ -51,8 +52,9 @@ export async function createAwsAlertDetailsStore(
   return createKnexAwsAlertDetailsStore(client, options);
 }
 
-export function createKnexAwsAlertDetailsStore(client: Knex, options: AwsAlertDetailsStoreOptions = {}): AwsAlertDetailsStore {
+export function createKnexAwsAlertDetailsStore(client: Knex, options: AwsAlertDetailsStoreOptions = {}): AwsAlertDetailsStore & { pruneExpired(): Promise<number> } {
   const now = options.now ?? (() => new Date());
+  const retentionCutoff = () => new Date(now().getTime() - awsAlertDetailsRetentionDays * 24 * 60 * 60 * 1000).toISOString();
   return {
     async save(scope, details) {
       const updatedAt = now().toISOString();
@@ -60,19 +62,20 @@ export function createKnexAwsAlertDetailsStore(client: Knex, options: AwsAlertDe
         .insert({ scope, details: JSON.stringify(details), updated_at: updatedAt })
         .onConflict('scope')
         .merge(['details', 'updated_at']);
-      // Retention runs on the write path so the module needs no background worker.
-      // A failed cleanup must not turn a stored detail into a reported failure.
-      try {
-        const cutoff = new Date(now().getTime() - awsAlertDetailsRetentionDays * 24 * 60 * 60 * 1000).toISOString();
-        await client(awsAlertDetailsTable).where('updated_at', '<', cutoff).delete();
-      } catch {
-        options.logger?.warn('Failed to apply the AWS alert detail retention policy');
-      }
+    },
+    async pruneExpired() {
+      const cutoff = retentionCutoff();
+      const scopes = await client(awsAlertDetailsTable).where('updated_at', '<', cutoff)
+        .orderBy('updated_at').orderBy('scope').limit(cleanupBatchSize).pluck('scope');
+      if (!scopes.length) return 0;
+      // Recheck expiry: a selected row may have been refreshed since the query.
+      return client(awsAlertDetailsTable).whereIn('scope', scopes).where('updated_at', '<', cutoff).delete();
     },
     async read(scopes) {
       const unique = [...new Set(scopes.filter(scope => typeof scope === 'string' && scope))].slice(0, maxScopesPerRead);
       if (!unique.length) return new Map();
-      const rows = await client(awsAlertDetailsTable).select('scope', 'details', 'updated_at').whereIn('scope', unique);
+      const rows = await client(awsAlertDetailsTable).select('scope', 'details', 'updated_at')
+        .whereIn('scope', unique).where('updated_at', '>=', retentionCutoff());
       const stored = new Map<string, StoredAwsAlertDetails>();
       for (const row of rows as Array<{ scope: string; details: string; updated_at: string }>) {
         try {

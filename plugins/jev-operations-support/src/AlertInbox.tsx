@@ -265,11 +265,11 @@ const impactGroups = [
   { id: 'limited', label: 'Limited impact' },
   { id: 'unknown', label: 'Impact not established' },
   { id: 'unassessed', label: 'Not assessed by Jev' },
-  { id: 'recovered', label: 'Recovered' },
+  { id: 'recovered', label: 'Alarm returned to OK' },
 ] as const;
 type GroupId = typeof impactGroups[number]['id'];
 
-/** Jev's reading of an alert: the freshest result wins, and AWS recovery overrides both. */
+/** Jev's reading of an alert; monitoring OK is shown separately, not as resolved customer impact. */
 export function categorizeAlert(notification: AwsAlertNotification, recheck?: EvaluationResult): { group: GroupId; area?: string } {
   const result = recheck ?? notification.metadata?.result;
   const value = (id: string) => { const found = result?.findings.find(finding => finding.id === id)?.value; return typeof found === 'string' ? found : undefined; };
@@ -579,10 +579,10 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
               </TableRow>)}</TableBody>
             </Table>
           </TableContainer>
-          {!visible.length && <CardContent><Typography variant="body2" color="textSecondary">Every alert on this page has recovered.</Typography></CardContent>}
+          {!visible.length && <CardContent><Typography variant="body2" color="textSecondary">All alarms on this page are in the OK state. This does not confirm that customer impact has ended.</Typography></CardContent>}
           </>}
         <div className={classes.pager}>
-          <FormControlLabel style={{ marginRight: 'auto' }} label={<Typography variant="caption">Hide recovered</Typography>} control={<Switch size="small" color="primary" checked={hideRecovered} onChange={event => setHideRecovered(event.target.checked)} />} />
+          <FormControlLabel style={{ marginRight: 'auto' }} label={<Typography variant="caption">Hide OK alarms</Typography>} control={<Switch size="small" color="primary" checked={hideRecovered} onChange={event => setHideRecovered(event.target.checked)} />} />
           <Button size="small" disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>Previous</Button>
           <Typography variant="caption" color="textSecondary">{received ? `${offset + 1}–${offset + received} of ${totalCount}` : `0 of ${totalCount}`}</Typography>
           <Button size="small" disabled={busy || offset + limit >= totalCount} onClick={() => setOffset(offset + limit)}>Next</Button>
