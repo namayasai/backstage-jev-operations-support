@@ -68,7 +68,7 @@ const app = createApp({
 });
 ```
 
-This adds `/jev-operations-support` and an **Operations Support** entity tab. Preserve the app's existing catalog frontend feature, Catalog API, and route bindings. If your feature discovery already installs this plugin, use one registration mechanism rather than installing it twice.
+This adds separate **Alerts** (`/jev-alerts`) and **Playground** (`/jev-operations-support`) sidebar pages, plus an **Operations Support** entity tab. Preserve the app's existing catalog frontend feature, Catalog API, and route bindings. If your feature discovery already installs this plugin, use one registration mechanism rather than installing it twice.
 
 `jevPlugin` also registers two read-only entity cards, `EntityCardBlueprint` extensions with the full ids `entity-card:jev-operations-support/readiness` and `entity-card:jev-operations-support/owner-suggestion` (each with its own `filter`: the readiness card to `Component`, matching its default `targetKinds`; the owner card to `Component`/`API`/`Resource`/`System`, matching the owner-suggestion retriever's default `kinds`). If your app disables or reconfigures them, use these full ids. They read the latest result the optional Tech Insights module (section 5) already computed on its own schedule; they never call `/evaluate` themselves. Both are silent (no error styling) when the Tech Insights module is not installed.
 
@@ -79,15 +79,17 @@ This adds `/jev-operations-support` and an **Operations Support** entity tab. Pr
 In `packages/app/src/App.tsx`, add the page inside your existing `FlatRoutes`:
 
 ```tsx
-import { JevPage } from '@namayasai/backstage-plugin-jev-operations-support';
+import { JevPage, JevAlertsPage } from '@namayasai/backstage-plugin-jev-operations-support';
 
 <Route path="/jev-operations-support" element={<JevPage />} />
+<Route path="/jev-alerts" element={<JevAlertsPage />} />
 ```
 
 Add a navigation item to your existing sidebar using your preferred icon:
 
 ```tsx
-<SidebarItem icon={YourIcon} to="jev-operations-support" text="Operations Support" />
+<SidebarItem icon={YourAlertIcon} to="jev-alerts" text="Alerts" />
+<SidebarItem icon={YourIcon} to="jev-operations-support" text="Playground" />
 ```
 
 Optionally add an entity tab in `EntityPage.tsx`:

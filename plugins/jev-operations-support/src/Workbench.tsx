@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Box, Button, Card, CardContent, CardHeader, CircularProgress, Divider, Grid, IconButton, TextField, Typography, makeStyles } from '@material-ui/core';
-import { Alert, ToggleButton, ToggleButtonGroup } from '@material-ui/lab';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Box, Button, Card, CardContent, CardHeader, CircularProgress, Divider, Grid, IconButton, Tab, Tabs, TextField, Typography, makeStyles } from '@material-ui/core';
+import { Alert } from '@material-ui/lab';
 import { CloseIcon } from './icons';
 import { buildEvaluation, MAX_EVALUATION_BYTES, negativeFindingDisclaimer, workflows, sampleText, sampleCandidates, type Candidate, type EvaluationRequest, type EvaluationResult, type WorkflowId } from '@namayasai/backstage-plugin-jev-operations-support-common';
 import { FindingCounts, FindingList, PendingChecks } from './Findings';
@@ -39,7 +39,8 @@ const templateExamples: Candidate[] = [
 
 const useStyles = makeStyles(theme => ({
   sticky: { [theme.breakpoints.up('md')]: { position: 'sticky', top: theme.spacing(2) } },
-  selector: { flexWrap: 'wrap', marginBottom: theme.spacing(2) },
+  selector: { marginBottom: theme.spacing(3), borderBottom: `1px solid ${theme.palette.divider}` },
+  tab: { textTransform: 'none' },
   counter: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
   source: { border: `1px solid ${theme.palette.divider}`, borderRadius: theme.shape.borderRadius, padding: theme.spacing(1.5, 2), marginBottom: theme.spacing(2) },
   sourceRow: { display: 'flex', gap: theme.spacing(1), alignItems: 'center', marginTop: theme.spacing(1) },
@@ -56,6 +57,7 @@ const useStyles = makeStyles(theme => ({
  */
 export function JevWorkbench({ evaluate, loadCandidates, renderCandidateLink, workflowIds, initialWorkflow, initialText, contextNote, techDocs, demo = false, live: liveProp, liveDelayMs, active = true }: WorkbenchProps) {
   const classes = useStyles();
+  const tabsId = useId();
   const offered = useMemo(() => workflows.filter(w => !workflowIds || workflowIds.includes(w.id)), [workflowIds]);
   const [workflow, setWorkflow] = useState<WorkflowId>(initialWorkflow ?? offered[0]?.id ?? 'readiness');
   const [text, setText] = useState(initialText ?? '');
@@ -154,16 +156,22 @@ export function JevWorkbench({ evaluate, loadCandidates, renderCandidateLink, wo
     : held ? 'Not checked for this workflow yet — edit the text or choose Check now'
     : live ? 'Checks run as you type' : 'Live check is off — choose Check now, or turn on Live to check as you type';
 
-  return <Grid container spacing={3} alignItems="flex-start">
+  return <>
+    {offered.length > 1 && <Tabs value={workflow} className={classes.selector} aria-label="Decision workflows"
+      variant="scrollable" scrollButtons="auto" indicatorColor="primary" textColor="primary"
+      onChange={(_, next: WorkflowId) => { if (next !== workflow) switchWorkflow(next); }}>
+      {offered.map(w => <Tab key={w.id} value={w.id} label={w.title} className={classes.tab}
+        id={`${tabsId}-tab-${w.id}`} aria-controls={`${tabsId}-panel-${w.id}`} />)}
+    </Tabs>}
+    <Grid container spacing={3} alignItems="flex-start"
+      role={offered.length > 1 ? 'tabpanel' : undefined}
+      id={`${tabsId}-panel-${workflow}`} aria-labelledby={offered.length > 1 ? `${tabsId}-tab-${workflow}` : undefined}>
     <Grid item xs={12} md={7}>
       <Card>
         <CardHeader title={current.title} subheader={current.description} titleTypographyProps={{ variant: 'h5', component: 'h2' }} />
         <Divider />
         <CardContent>
           {demo && <Alert severity="warning" role="note" style={{ marginBottom: 16 }}>Demo mode — results are fixed illustrative examples. No API call is made, and your text is not evaluated.</Alert>}
-          {offered.length > 1 && <ToggleButtonGroup exclusive size="small" value={workflow} className={classes.selector} aria-label="Decision workflows" onChange={(_, next: WorkflowId | null) => { if (next && next !== workflow) switchWorkflow(next); }}>
-            {offered.map(w => <ToggleButton key={w.id} value={w.id}>{w.title}</ToggleButton>)}
-          </ToggleButtonGroup>}
           {contextNote && <Box className={classes.source} role="note"><Typography variant="subtitle2">Entity context</Typography><Typography variant="body2" color="textSecondary" component="div">{contextNote}</Typography></Box>}
           {techDocs && <Box className={classes.source}>
             <Typography variant="subtitle2">TechDocs for {techDocs.entityRef}</Typography>
@@ -234,5 +242,6 @@ export function JevWorkbench({ evaluate, loadCandidates, renderCandidateLink, wo
         </CardContent>
       </Card>
     </Grid>
-  </Grid>;
+  </Grid>
+  </>;
 }

@@ -50,7 +50,33 @@ function twoAlerts() {
   return parseAlertNotificationPage({ totalCount: 2, notifications: [rawRow(), second] });
 }
 
+async function openAlert(name = 'checkout-high-errors') {
+  fireEvent.click((await screen.findAllByRole('button', { name }))[0]);
+}
+
 describe('AWS alert inbox', () => {
+  it('shows severity separately from Jev impact and opens details only on selection', async () => {
+    const row = rawRow();
+    Object.assign(row.payload, { severity: 'high' });
+    const loadNotifications = vi.fn(async () => parseAlertNotificationPage({ totalCount: 1, notifications: [row] }));
+    const evaluate = vi.fn();
+    render(<AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} pollMs={0} />);
+    await screen.findByRole('button', { name: 'checkout-high-errors' });
+    const table = screen.getByRole('table', { name: 'AWS alert list' });
+    for (const name of ['Type', 'Severity', 'Log', 'Jev quick check']) expect(within(table).getByRole('columnheader', { name })).toBeTruthy();
+    expect(within(table).getByText('high')).toBeTruthy();
+    expect(within(table).getByText('Limited impact')).toBeTruthy();
+    expect(screen.queryByRole('article', { name: 'AWS alert details' })).toBeNull();
+    await openAlert();
+    expect(screen.getByRole('article', { name: 'AWS alert details' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Close details' }));
+    expect(screen.queryByRole('article', { name: 'AWS alert details' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(loadNotifications).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('article', { name: 'AWS alert details' })).toBeNull();
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
   it('drops malformed rows without rejecting valid notifications', () => {
     const parsed = parseAlertNotificationPage({ totalCount: 2, notifications: [rawRow(), { payload: { topic: 'other' } }] });
     expect(parsed.notifications).toHaveLength(1);
@@ -62,6 +88,7 @@ describe('AWS alert inbox', () => {
     expect(parsed.notifications[0].created).toBe('2026-09-19T10:00:00.000Z');
     expect(parsed.notifications[0].updated).toBe('2026-09-19T10:00:04.000Z');
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await openAlert();
     await screen.findAllByText(/2026-09-19 10:00 UTC/);
     expect(screen.getByText(/updated/).textContent).toContain('2026-09-19 10:00 UTC');
   });
@@ -89,6 +116,7 @@ describe('AWS alert inbox', () => {
     expect(parsed.notifications[0].resultUnreadable).toBe(true);
     expect(parsed.notifications[0].metadata?.result).toBeUndefined();
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await openAlert();
     await screen.findByText(/stored Jev result does not match the evaluation contract/);
     expect(screen.getByText('AWS state: ALARM')).toBeTruthy();
   });
@@ -100,6 +128,7 @@ describe('AWS alert inbox', () => {
     expect(parsed.skipped).toBe(0);
     expect(parsed.notifications[0].metadata).toBeUndefined();
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await openAlert();
 
     await screen.findAllByText('checkout-high-errors');
     expect(screen.getAllByText(/HTTP 500 rate exceeded threshold/).length).toBeGreaterThan(0);
@@ -118,6 +147,7 @@ describe('AWS alert inbox', () => {
     expect(parsed.notifications[0].detailsUnreadable).toBe(true);
     expect(parsed.notifications[0].metadata).toBeUndefined();
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await openAlert();
 
     await screen.findByText(/stored alert details could not be read/);
     expect(screen.getAllByText('checkout-high-errors').length).toBeGreaterThan(0);
@@ -128,6 +158,7 @@ describe('AWS alert inbox', () => {
     const parsed = parseAlertNotificationPage({ totalCount: 1, notifications: [rawRow({}, { evaluationStatus: 'not-evaluated', errorCode: 'evaluation-capacity-reached', result: undefined })] });
     expect(parsed.notifications[0].detailsUpdated).toBe('2026-09-19T10:00:05.000Z');
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await openAlert();
     const status = await screen.findByText(/Jev not evaluated \(evaluation-capacity-reached\)/);
     expect(status.textContent).toContain('recorded 2026-09-19 10:00 UTC');
   });
@@ -135,6 +166,7 @@ describe('AWS alert inbox', () => {
   it('reports an alert that carries no automatic result', async () => {
     const parsed = parseAlertNotificationPage({ totalCount: 1, notifications: [rawRow({}, { evaluationStatus: 'failed', errorCode: 'jev-busy', result: undefined })] });
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await openAlert();
     await screen.findByText(/Automatic evaluation failed for this alert/);
     expect(screen.getByText(/Jev evaluation failed \(jev-busy\)/)).toBeTruthy();
   });
@@ -143,6 +175,7 @@ describe('AWS alert inbox', () => {
     const loadNotifications = vi.fn().mockResolvedValue(page());
     const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
     render(<AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} />);
+    await openAlert();
     await screen.findAllByText('checkout-high-errors');
     expect(loadNotifications).toHaveBeenCalledWith(0, 20);
     expect(screen.getByText('AWS state: ALARM')).toBeTruthy();
@@ -159,6 +192,7 @@ describe('AWS alert inbox', () => {
     const parsed = parseAlertNotificationPage({ totalCount: 1, notifications: [rawRow({}, { context: '障害'.repeat(9000), result: undefined, evaluationStatus: 'not-evaluated' })] });
     const evaluate = vi.fn();
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={evaluate} />);
+    await openAlert();
     fireEvent.click(await screen.findByRole('button', { name: 'Re-check with Jev' }));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('cannot be evaluated'));
     expect(evaluate).not.toHaveBeenCalled();
@@ -171,6 +205,7 @@ describe('AWS alert inbox', () => {
       settle = outcome => (outcome instanceof Error ? reject(outcome) : resolve(outcome));
     }));
     render(<AlertInbox autoCheck={false} loadNotifications={async () => parsed} evaluate={evaluate} />);
+    await openAlert();
     await screen.findAllByText('checkout-high-errors');
     fireEvent.click(screen.getByRole('button', { name: 'Re-check with Jev' }));
     // Move to the other alert while the re-check of the first one is still running.
@@ -190,10 +225,12 @@ describe('AWS alert inbox', () => {
     let release: (result: EvaluationResult) => void = () => {};
     const evaluate = vi.fn(() => new Promise<EvaluationResult>(resolve => { release = resolve; }));
     const view = render(<AlertInbox loadNotifications={async () => parsed} evaluate={evaluate} />);
+    await openAlert();
     await screen.findAllByText('checkout-high-errors');
     fireEvent.click(screen.getByRole('button', { name: 'Re-check with Jev' }));
     // A parent re-render with a fresh loader replaces the list mid-re-check.
     view.rerender(<AlertInbox loadNotifications={async () => parsed} evaluate={evaluate} />);
+    await openAlert();
     release(demoEvaluation({ workflow: 'incident', text: context, candidates: [] }));
     await waitFor(() => expect((screen.getByRole('button', { name: 'Re-check with Jev' }) as HTMLButtonElement).disabled).toBe(false));
     expect(screen.queryByText('Manual Jev re-check (not stored)')).toBeNull();
@@ -204,6 +241,7 @@ describe('AWS alert inbox', () => {
     const second = parseAlertNotificationPage({ totalCount: 21, notifications: [rawRow({ id: 'notification-21' })] });
     const loadNotifications = vi.fn(async (offset: number) => (offset === 0 ? first : second));
     render(<AlertInbox loadNotifications={loadNotifications} evaluate={async (input: EvaluationRequest) => demoEvaluation(input)} />);
+    await openAlert();
     await screen.findAllByText('checkout-high-errors');
     expect(screen.getByText('1–1 of 21')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Re-check with Jev' }));
@@ -274,6 +312,7 @@ describe('AWS alert inbox', () => {
     const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
     const loadOwners = vi.fn(async () => [{ id: 'group:default/payments', entityRef: 'group:default/payments', title: 'Payments', description: 'Checkout and billing' }, { id: 'group:default/identity', entityRef: 'group:default/identity', title: 'Identity', description: 'Login' }]);
     render(<AlertInbox loadNotifications={async () => page()} evaluate={evaluate} loadOwners={loadOwners} pollMs={0} />);
+    await openAlert();
     fireEvent.click(await screen.findByRole('button', { name: 'Suggest owning team' }));
     await screen.findByText('Suggested owner (not stored)');
     expect(evaluate.mock.calls[0][0]).toMatchObject({ workflow: 'ownership', text: context });
@@ -381,7 +420,7 @@ describe('AWS alert inbox', () => {
     // The unassessed alert first, so it is selected on the untouched (Live off) default.
     const reversed = { ...parsed, notifications: [...parsed.notifications].reverse() };
     render(<AlertInbox loadNotifications={async () => reversed} evaluate={vi.fn()} pollMs={0} />);
-    await screen.findAllByText('identity-high-errors');
+    await openAlert('identity-high-errors');
     expect(screen.getByText(/No automatic Jev result is stored on this alert/)).toBeTruthy();
     expect(screen.getByText('Choose Re-check with Jev to assess it now.')).toBeTruthy();
   });
@@ -424,15 +463,15 @@ describe('AWS alert inbox', () => {
     expect(evaluate).not.toHaveBeenCalled();
   });
 
-  it('a successful background poll clears an earlier load error and seeds a selection', async () => {
+  it('a successful background poll restores the list without opening details', async () => {
     let calls = 0;
     const loadNotifications = vi.fn(async () => { calls++; if (calls === 1) throw new Error('AWS alerts could not be loaded.'); return page(); });
     render(<AlertInbox loadNotifications={loadNotifications} evaluate={vi.fn()} pollMs={20} />);
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('AWS alerts could not be loaded.'));
     await waitFor(() => expect(loadNotifications).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
-    // The first load failed with nothing selected; the recovering poll is the reader's only
-    // way back in, so it must not leave them with an empty details pane.
+    expect(screen.queryByRole('article', { name: 'AWS alert details' })).toBeNull();
+    await openAlert();
     expect(screen.getByRole('article', { name: 'AWS alert details' })).toBeTruthy();
     expect(screen.getAllByText('checkout-high-errors').length).toBeGreaterThan(0);
   });
@@ -491,6 +530,7 @@ describe('AWS alert inbox: owner suggestion made at receipt', () => {
   it('renders a stored owner suggestion in the detail pane, after the incident result', async () => {
     const parsed = withOwner();
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await openAlert();
     await screen.findByText('Stored Jev result from receipt');
     await screen.findByText('Suggested owner from receipt');
     expect(screen.getAllByText(/SRE/).length).toBeGreaterThan(0);
@@ -500,6 +540,7 @@ describe('AWS alert inbox: owner suggestion made at receipt', () => {
     const wrongWorkflow = demoEvaluation({ workflow: 'incident', text: context, candidates: [] });
     const parsed = parseAlertNotificationPage({ totalCount: 1, notifications: [rawRow({}, { ownerStatus: 'evaluated', ownerResult: wrongWorkflow })] });
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await openAlert();
     await screen.findAllByText('checkout-high-errors');
     expect(screen.getByText('AWS state: ALARM')).toBeTruthy();
     await screen.findByText(/stored owner suggestion does not match the evaluation contract/);
@@ -509,12 +550,14 @@ describe('AWS alert inbox: owner suggestion made at receipt', () => {
   it('explains a failed or not-evaluated stored owner status in one sentence', async () => {
     const notEvaluated = parseAlertNotificationPage({ totalCount: 1, notifications: [rawRow({}, { ownerStatus: 'not-evaluated', ownerErrorCode: 'no-catalog-groups' })] });
     render(<AlertInbox loadNotifications={async () => notEvaluated} evaluate={vi.fn()} />);
+    await openAlert();
     await screen.findByText(/No catalog Group entities were available/);
   });
 
   it('omits the owner section entirely when no owner fields are stored (feature disabled)', async () => {
     const parsed = page();
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await openAlert();
     await screen.findByText('Stored Jev result from receipt');
     expect(screen.queryByText('Suggested owner from receipt')).toBeNull();
     expect(screen.queryByText(/^No automatic owner suggestion/)).toBeNull();
@@ -525,10 +568,12 @@ describe('AWS alert inbox: owner suggestion made at receipt', () => {
     const withStoredOwner = withOwner();
     const loadOwners = vi.fn(async () => ownerGroups);
     render(<AlertInbox loadNotifications={async () => noOwner} evaluate={vi.fn()} loadOwners={loadOwners} pollMs={0} />);
+    await openAlert();
     await screen.findByRole('button', { name: 'Suggest owning team' });
 
     cleanup();
     render(<AlertInbox loadNotifications={async () => withStoredOwner} evaluate={vi.fn()} loadOwners={loadOwners} pollMs={0} />);
+    await openAlert();
     await screen.findByRole('button', { name: 'Re-suggest owning team' });
   });
 
@@ -537,6 +582,7 @@ describe('AWS alert inbox: owner suggestion made at receipt', () => {
     const loadOwners = vi.fn(async () => ownerGroups);
     const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={evaluate} loadOwners={loadOwners} pollMs={0} />);
+    await openAlert();
     await screen.findByText('Suggested owner from receipt');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Re-suggest owning team' }));
@@ -549,6 +595,7 @@ describe('AWS alert inbox: owner suggestion made at receipt', () => {
   it('labels a runner-up candidate from the stored shortlist instead of a raw c0/c1 key', async () => {
     const parsed = withOwner({ ownerCandidates: ownerGroups.map(candidate => ({ id: candidate.id, title: candidate.title })) });
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await openAlert();
     await screen.findByText('Suggested owner from receipt');
     const section = within(screen.getByRole('group', { name: 'Suggested owner from receipt' }));
     // A confident "pass" choice with a resolvable candidate link is expanded by default.
@@ -563,6 +610,7 @@ describe('AWS alert inbox: owner suggestion made at receipt', () => {
   it('falls back to "Candidate N" instead of a raw c0/c1 key when no stored shortlist is available', async () => {
     const parsed = withOwner(); // no ownerCandidates stored
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await openAlert();
     await screen.findByText('Suggested owner from receipt');
     const section = within(screen.getByRole('group', { name: 'Suggested owner from receipt' }));
     fireEvent.click(section.getByText('Probability distribution'));
@@ -573,6 +621,7 @@ describe('AWS alert inbox: owner suggestion made at receipt', () => {
   it('notes when the stored shortlist was shortened to fit the evaluation budget', async () => {
     const parsed = withOwner({ ownerShortened: true });
     render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await openAlert();
     await screen.findByText(/shortened team descriptions were used/);
   });
 

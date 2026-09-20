@@ -487,3 +487,9 @@ Provider usage, SQS polling, and Notifications storage costs follow the selected
 Backstage and AWS plans. Start with one test alarm and an exact TopicArn allowlist before
 expanding recipients or alarm volume. The module does not estimate AWS or Jev
 pricing.
+
+## Alert list and detail view
+
+Open **Alerts** in the Backstage sidebar. The table shows **Type**, **Severity**, **Log**, and **Jev quick check**. Select a row to show its stored incident assessment, owner suggestion, and original context; close the details to return to the list. **Refresh** remains available above the table, alongside automatic refresh.
+
+Severity is the standard Backstage notification priority. This module maps CloudWatch `ALARM` to `high`, `INSUFFICIENT_DATA` to `normal`, and `OK` to `low`. Missing severity is shown as **Not provided**. This is separate from Jev's customer-impact classification and confidence. The quick-check column summarizes that classification, an investigation lead and, when available, the suggested team. The detail view shows each actual question, result, and confidence; it does not fabricate a narrative explanation from the model.

@@ -1,10 +1,15 @@
 import { createComponentExtension, createPlugin, createRoutableExtension, createRouteRef } from '@backstage/core-plugin-api';
 import { entityRouteRef } from '@backstage/plugin-catalog-react';
 export const rootRouteRef = createRouteRef({ id: 'jev-operations-support' });
-export const jevPlugin = createPlugin({ id: 'jev-operations-support', routes: { root: rootRouteRef } });
+export const alertsRouteRef = createRouteRef({ id: 'jev-alerts' });
+export const jevPlugin = createPlugin({ id: 'jev-operations-support', routes: { root: rootRouteRef, alerts: alertsRouteRef } });
 export const JevPage = jevPlugin.provide(createRoutableExtension({
   name: 'JevPage', mountPoint: rootRouteRef,
   component: () => import('./BackstagePage').then(m => m.JevStandalonePage),
+}));
+export const JevAlertsPage = jevPlugin.provide(createRoutableExtension({
+  name: 'JevAlertsPage', mountPoint: alertsRouteRef,
+  component: () => import('./BackstagePage').then(m => m.JevAlertsStandalonePage),
 }));
 export const EntityJevContent = jevPlugin.provide(createRoutableExtension({
   name: 'EntityJevContent', mountPoint: entityRouteRef,

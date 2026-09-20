@@ -28,7 +28,7 @@ describe('Backstage integration adapters', () => {
     mocks.fetch.mockImplementation(async (url, init) => String(url).includes('/aws-alerts?') ? new Response('{}', { status: 404 }) : new Response(JSON.stringify(demoEvaluation(JSON.parse(init.body)))));
     render(<MemoryRouter><JevPage /></MemoryRouter>);
     fireEvent.click(screen.getByRole('tab', { name: 'Playground' }));
-    fireEvent.click(screen.getByRole('button', { name: /Template advisor/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Template advisor/ }));
     fireEvent.change(screen.getByLabelText('Context'), { target: { value: 'Create a Node.js service with Postgres' } });
     fireEvent.change(screen.getByLabelText('Catalog filter'), { target: { value: 'Node' } });
     fireEvent.click(await screen.findByRole('button', { name: 'Load from catalog' }));
@@ -45,6 +45,20 @@ describe('Backstage integration adapters', () => {
     expect(mocks.fetch.mock.calls.some(([url]) => url === 'https://backstage.example/api/jev-operations-support/evaluate')).toBe(true);
     expect(screen.getByText(/Backend demo mode is enabled/)).toBeTruthy();
   });
+  it('renders separate Alerts and Playground pages without the old top-level switcher', async () => {
+    mocks.fetch.mockResolvedValue(new Response('{}', { status: 404 }));
+    const view = render(<MemoryRouter><JevPage page="alerts" /></MemoryRouter>);
+    await screen.findByText(/AWS alerts are unavailable/);
+    expect(screen.queryByRole('tablist', { name: 'Operations Support views' })).toBeNull();
+    expect(screen.queryByLabelText('Context')).toBeNull();
+    view.unmount();
+    mocks.fetch.mockClear();
+    render(<MemoryRouter><JevPage page="playground" /></MemoryRouter>);
+    expect(screen.getByRole('tablist', { name: 'Decision workflows' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: 'Incident triage' })).toBeNull();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
   it('drops the old text and results when the catalog entity changes', async () => {
     mocks.entity.metadata.name = 'checkout';
     mocks.fetch.mockImplementation(async (_url, init) => new Response(JSON.stringify(demoEvaluation(JSON.parse(init.body)))));

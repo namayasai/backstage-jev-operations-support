@@ -52,14 +52,16 @@ describe('decision workbench', () => {
     render(<JevWorkbench live={false} initialText="A sufficiently detailed document" evaluate={async input => demoEvaluation(input)} />);
     fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
     await screen.findByText(/Up to date/);
-    fireEvent.click(screen.getByRole('button', { name: /Incident triage/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Incident triage/ }));
     expect(screen.queryByText(/Up to date|Out of date/)).toBeNull();
     expect(screen.getByText('Investigation area')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Incident triage', selected: true })).toBeTruthy();
+    expect(screen.getByRole('tabpanel', { name: 'Incident triage' })).toBeTruthy();
   });
   it('loads and evaluates a template shortlist', async () => {
     const evaluate = vi.fn(async input => demoEvaluation(input));
     render(<JevWorkbench demo live={false} evaluate={evaluate} />);
-    fireEvent.click(screen.getByRole('button', { name: /Template advisor/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Template advisor/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
     await screen.findByText(/Up to date/);
     expect(evaluate.mock.calls[0][0].candidates).toHaveLength(2);
@@ -99,7 +101,7 @@ describe('decision workbench', () => {
     fireEvent.change(screen.getByLabelText('Context'), { target: { value: 'A sufficiently detailed runbook' } });
     await screen.findByText(/Up to date/);
     expect(evaluate).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: /Change review/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Change review/ }));
     expect(screen.getByText(/Not checked for this workflow yet/)).toBeTruthy();
     await new Promise(resolve => setTimeout(resolve, 40));
     // Switching workflow kept the text, but must not have resent it.

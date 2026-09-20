@@ -34,13 +34,13 @@ npm ci
 npm run dev
 ```
 
-Open the localhost URL. The playground opens on the alert inbox, grouped by the impact Jev read from each alarm; the **Playground** tab lets you try any of the other five workflows by hand, either by choosing "Check now" or by turning on the Live switch to check input as you edit it (Live is off by default, opt-in per browser, same as in a real Backstage instance). This playground deliberately uses fixed fixtures: it does not call Jev or judge edited text. Live evaluation is available through the Backstage backend and the smoke-test command below.
+Open the localhost URL. The standalone demo opens on an alert table; the **Playground** tab lets you try any of the other five workflows by hand, either by choosing "Check now" or by turning on the Live switch to check input as you edit it (Live is off by default, opt-in per browser, same as in a real Backstage instance). This playground deliberately uses fixed fixtures: it does not call Jev or judge edited text. Live evaluation is available through the Backstage backend and the smoke-test command below.
 
 The repository's `.npmrc` uses `legacy-peer-deps` because Backstage's optional test peer dependencies produce conflicting React type resolutions under npm. Runtime React is pinned to 18 through root overrides; TypeScript and integration adapter tests check the installed versions. Use your Backstage application's existing package manager when integrating.
 
 ## Install in Backstage
 
-See [the installation guide](docs/installation.md) for package installation, frontend registration, the entity tab, permissions, and configuration. All five packages are published on npm at 0.3.0: frontend, backend, shared, and the two optional backend modules. GitHub Release tarballs are also available. The shared package installs automatically with the frontend or backend. The [Plugin Directory submission](https://github.com/backstage/backstage/pull/35788) is awaiting upstream review.
+See [the installation guide](docs/installation.md) for package installation, frontend registration, the entity tab, permissions, and configuration. All five packages are published on npm at 0.3.0: frontend, backend, shared, and the two optional backend modules. GitHub Release tarballs are also available. The shared package installs automatically with the frontend or backend. The [Plugin Directory submission](https://github.com/backstage/backstage/pull/35788) is currently closed.
 
 The two optional backend modules are installed by name alongside the matching 0.3.0 backend, since they import its `/client` export; see [optional modules](docs/installation.md#5-optional-modules).
 
@@ -85,6 +85,8 @@ examples/playground/                             Standalone fixture UI using the
 ```
 
 The six workflows share one backend and UI package so installations need only one API key and one authorization policy. Each workflow is independently selected by its ID. The optional modules reuse the same `buildEvaluation`, `summarize`, and Jev client through the backend's `/client` export rather than adding a second transport or key.
+
+In Backstage, **Alerts** and **Playground** have separate sidebar entries. Alerts shows notification type, severity, log content and a Jev summary; selecting a row opens the details. Playground switches workflows with tabs.
 
 ## Optional integrations
 

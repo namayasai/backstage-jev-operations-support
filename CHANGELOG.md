@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a dedicated Alerts sidebar page with Type, notification Severity, Log and Jev quick-check columns. Open details on row selection, keep Refresh visible, and use workflow tabs in the separate Playground page.
+
 - Preserve the 300-file readiness limit when change review uses smaller listing pages. Report excess matching documents after pending, retain unfinished status obligations across superseded retries, and resolve old pending statuses on their original commit when a PR moves.
 
 Two additions, one on each side of the Tech Insights module, both read-only or opt-in:

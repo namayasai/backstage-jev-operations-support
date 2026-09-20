@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Box, Button, Card, CardContent, CardHeader, Chip, Divider, FormControlLabel, Grid, List, ListItem, ListItemText, ListSubheader, Switch, TextField, Typography, makeStyles } from '@material-ui/core';
+import { Box, Button, Card, CardContent, CardHeader, Chip, Divider, FormControlLabel, Grid, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Switch, TextField, Typography, makeStyles } from '@material-ui/core';
 import { Alert } from '@material-ui/lab';
 import { evaluationRequestSchema, type Candidate, type EvaluationRequest, type EvaluationResult } from '@namayasai/backstage-plugin-jev-operations-support-common';
 import { isEvaluationResult } from './evaluationResult';
@@ -44,6 +44,7 @@ export interface AwsAlertNotification {
   updated?: string;
   title: string;
   description: string;
+  severity?: 'critical' | 'high' | 'normal' | 'low';
   /**
    * Structured alert context restored by the backend from the module's own table.
    * It is absent when the row expired under the retention policy, was never stored,
@@ -176,6 +177,7 @@ function parseNotification(row: unknown, index: number): AwsAlertNotification | 
     ...(updated && updated !== created ? { updated } : {}),
     title,
     description,
+    ...(['critical', 'high', 'normal', 'low'].includes(String(payload.severity)) ? { severity: payload.severity as AwsAlertNotification['severity'] } : {}),
     ...(details ? { metadata: details.metadata } : {}),
     detailsUnreadable: Boolean(raw) && !details,
     ...(raw && timestampValue(raw.updatedAt) ? { detailsUpdated: timestampValue(raw.updatedAt) } : {}),
@@ -289,13 +291,12 @@ const useStyles = makeStyles(theme => ({
     '& .MuiCardHeader-content': { minWidth: 200, overflowWrap: 'anywhere' },
     '& .MuiCardHeader-action': { marginLeft: 0, marginTop: 0, alignSelf: 'center' },
   },
-  dot: { width: 10, height: 10, borderRadius: '50%', flex: 'none', alignSelf: 'flex-start', margin: theme.spacing(1.5, 1.5, 0, 0), background: theme.palette.text.disabled },
-  ALARM: { background: theme.palette.error.main },
-  OK: { background: theme.palette.success.main },
-  INSUFFICIENT_DATA: { background: theme.palette.warning.main },
-  list: { padding: 0 },
-  subheader: { background: theme.palette.background.paper, lineHeight: '36px', display: 'flex', justifyContent: 'space-between' },
-  chips: { display: 'flex', gap: theme.spacing(0.5), flexWrap: 'wrap', marginTop: theme.spacing(0.5) },
+  table: { minWidth: 740, tableLayout: 'fixed' },
+  typeColumn: { width: 110, whiteSpace: 'nowrap' },
+  severityColumn: { width: 100, whiteSpace: 'nowrap' },
+  log: { width: '40%', overflowWrap: 'anywhere' },
+  rowButton: { padding: 0, border: 0, background: 'none', color: theme.palette.primary.main, textAlign: 'left', cursor: 'pointer', font: 'inherit', '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}` } },
+  chips: { '& .MuiChip-root': { maxWidth: '100%' }, display: 'flex', gap: theme.spacing(0.5), flexWrap: 'wrap', marginTop: theme.spacing(0.5) },
   meta: { display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr)', gap: theme.spacing(0.5, 2), margin: 0, '& dd': { margin: 0, overflowWrap: 'anywhere' } },
   section: { marginTop: theme.spacing(3), '&:first-child': { marginTop: 0 } },
   actions: { display: 'flex', gap: theme.spacing(1), flexWrap: 'wrap', alignItems: 'center', marginTop: theme.spacing(2) },
@@ -352,8 +353,8 @@ function ReportTriage({ evaluate, liveDelayMs, live, setLive, forcedOff = false,
 }
 
 /**
- * Alerts arrive on their own: the list refreshes in the background and is grouped by the
- * impact Jev read from each alarm, so the reader starts from the worst one, not the newest.
+ * Alerts arrive on their own. The table keeps notification severity and Jev's interpretation
+ * separate, and expands a detail view only after the reader selects an alert.
  */
 export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCandidateLink, pollMs = 30000, autoCheck = true, liveDelayMs, active = true, live: liveProp }: AlertInboxProps) {
   const classes = useStyles();
@@ -363,6 +364,9 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
   const [totalCount, setTotalCount] = useState(0);
   const [skipped, setSkipped] = useState(0);
   const [selectedId, setSelectedId] = useState('');
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (detailsOpen) detailsRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); }, [detailsOpen, selectedId]);
   // The alert the reader explicitly clicked, as opposed to one selected automatically; only
   // that click may trigger an unrequested evaluate call (see `needsAssessment` below).
   const [pickedId, setPickedId] = useState('');
@@ -578,47 +582,46 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
   const visible = categorized.filter(entry => !hideRecovered || entry.group !== 'recovered');
 
   return <Grid container spacing={3} alignItems="flex-start" component="section" aria-label="AWS alerts">
-    <Grid item xs={12} md={5}>
+    <Grid item xs={12}>
       <Card>
         <CardHeader className={classes.cardHeader} title="AWS alerts" titleTypographyProps={{ variant: 'h5', component: 'h2' }}
-          subheader={pollFailed ? 'Background refresh failed; showing the last loaded list.' : lastLoaded ? `Grouped by Jev impact · last checked ${lastLoaded.toLocaleTimeString()}${pollMs ? ` · refreshes every ${Math.round(pollMs / 1000)}s` : ''}` : 'CloudWatch alerts delivered through Backstage Notifications.'}
-          action={<><Button size="small" color="primary" aria-pressed={reporting} style={{ margin: '8px 4px 0 0' }} onClick={() => setReporting(value => !value)}>Triage a report</Button><Button size="small" disabled={busy} style={{ margin: '8px 8px 0 0' }} onClick={() => { if (offset === 0) setRefreshToken(value => value + 1); else setOffset(0); }}>{loading ? 'Refreshing…' : 'Refresh'}</Button></>} />
+          subheader={pollFailed ? 'Background refresh failed; showing the last loaded list.' : lastLoaded ? `Last refreshed ${lastLoaded.toLocaleTimeString()}${pollMs ? ` · refreshes every ${Math.round(pollMs / 1000)}s` : ''}` : 'CloudWatch alerts delivered through Backstage Notifications.'}
+          action={<><Button size="small" color="primary" aria-pressed={reporting} style={{ margin: '8px 4px 0 0' }} onClick={() => setReporting(value => !value)}>Triage a report</Button><Button size="small" disabled={loading} variant="outlined" style={{ margin: '8px 8px 0 0' }} onClick={() => { if (offset === 0) setRefreshToken(value => value + 1); else setOffset(0); }}>{loading ? 'Refreshing…' : 'Refresh'}</Button></>} />
         <Divider />
         {error && <Alert severity="error" style={{ margin: 16 }}>{error}</Alert>}
         {skipped > 0 && <Alert severity="warning" role="status" style={{ margin: 16 }}>{skipped} row{skipped === 1 ? '' : 's'} could not be displayed because {skipped === 1 ? 'it was' : 'they were'} not readable AWS alert notifications.</Alert>}
         {loading && !notifications.length ? <CardContent><div className={classes.empty}><Typography variant="body2" color="textSecondary">Loading AWS alerts…</Typography></div></CardContent>
           : !notifications.length ? <CardContent><div className={classes.empty}><Typography variant="body2" color="textSecondary">No AWS alerts were returned.</Typography></div></CardContent>
           : <>
-          <List className={classes.list} aria-label="AWS alert list">
-            {impactGroups.map(group => {
-              const entries = visible.filter(entry => entry.group === group.id);
-              if (!entries.length) return null;
-              return <li key={group.id}><ul style={{ padding: 0 }}>
-                <ListSubheader className={classes.subheader}><span>{group.label}</span><span>{entries.length}</span></ListSubheader>
-                {entries.map(({ notification, area }) => { const isSelected = !reporting && notification.id === selectedId; return <li key={notification.id}><ListItem button divider component="div" selected={isSelected} aria-current={isSelected ? 'true' : undefined} onClick={() => {
-                  setReporting(false); setSelectedId(notification.id);
-                  // Assessing this click's intent now, not later: `reporting` is excluded because
-                  // this same click is setting it false, so it cannot itself block this click.
+          <TableContainer>
+            <Table className={classes.table} aria-label="AWS alert list" size="small">
+              <TableHead><TableRow><TableCell className={classes.typeColumn}>Type</TableCell><TableCell className={classes.severityColumn}>Severity</TableCell><TableCell className={classes.log}>Log</TableCell><TableCell>Jev quick check</TableCell></TableRow></TableHead>
+              <TableBody>{visible.map(({ notification, group, area }) => <TableRow key={notification.id} hover selected={detailsOpen && !reporting && notification.id === selectedId}
+                style={{ cursor: 'pointer' }} onClick={() => {
+                  setReporting(false); setSelectedId(notification.id); setDetailsOpen(true);
                   setPickedId(autoCheck && live && active ? notification.id : '');
                   setStaleSelected(undefined); setArrived(current => { const next = new Set(current); next.delete(notification.id); return next; });
                 }}>
-                  <span className={`${classes.dot} ${notification.metadata ? classes[notification.metadata.awsState] : ''}`} aria-hidden />
-                  <ListItemText disableTypography
-                    primary={<Typography variant="subtitle2" noWrap>{notification.title}</Typography>}
-                    secondary={<>
-                      <Typography variant="caption" color="textSecondary" component="div">{notification.metadata ? notification.metadata.awsState : 'Details unavailable'} · {notification.created ? instantLabel(notification.created) : 'Received time not reported'} · {notification.metadata?.region || 'Region unknown'}</Typography>
-                      <Typography variant="caption" color="textSecondary" component="div" noWrap>{notification.description || 'No reason supplied.'}</Typography>
-                      {(area || arrived.has(notification.id) || checkingId === notification.id || ownerChipLabel(notification.metadata)) && <div className={classes.chips}>
-                        {arrived.has(notification.id) && <Chip size="small" color="primary" label="New" />}
-                        {area && <Chip size="small" variant="outlined" label={`Look at: ${area}`} />}
-                        {ownerChipLabel(notification.metadata) && <Chip size="small" variant="outlined" label={ownerChipLabel(notification.metadata)} />}
-                        {checkingId === notification.id && <Chip size="small" variant="outlined" label="Assessing…" />}
-                      </div>}
-                    </>} />
-                </ListItem></li>; })}
-              </ul></li>;
-            })}
-          </List>
+                <TableCell className={classes.typeColumn}>CloudWatch<Typography variant="caption" color="textSecondary" component="div">{notification.metadata?.awsState ?? 'State unavailable'}</Typography></TableCell>
+                <TableCell className={classes.severityColumn}><Chip size="small" variant="outlined" label={notification.severity ?? 'Not provided'} color={notification.severity === 'critical' || notification.severity === 'high' ? 'secondary' : 'default'} /></TableCell>
+                <TableCell className={classes.log}>
+                  <button type="button" className={classes.rowButton} aria-expanded={detailsOpen && notification.id === selectedId} aria-controls="jev-alert-details">{notification.title}</button>
+                  <Typography variant="body2">{notification.description || 'No log message supplied.'}</Typography>
+                  <Typography variant="caption" color="textSecondary">{notification.created ? instantLabel(notification.created) : 'Received time not reported'} · {notification.metadata?.region || 'Region unknown'}</Typography>
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2">{impactGroups.find(item => item.id === group)!.label}</Typography>
+                  {notification.metadata?.result?.mode === 'demo' && <Typography variant="caption" color="textSecondary">Illustrative result</Typography>}
+                  <div className={classes.chips}>
+                    {arrived.has(notification.id) && <Chip size="small" color="primary" label="New" />}
+                    {area && <Chip size="small" variant="outlined" label={`Look at: ${area}`} />}
+                    {ownerChipLabel(notification.metadata) && <Chip size="small" variant="outlined" label={ownerChipLabel(notification.metadata)} title={ownerChipLabel(notification.metadata)} />}
+                    {checkingId === notification.id && <Chip size="small" variant="outlined" label="Assessing…" />}
+                  </div>
+                </TableCell>
+              </TableRow>)}</TableBody>
+            </Table>
+          </TableContainer>
           {!visible.length && <CardContent><Typography variant="body2" color="textSecondary">Every alert on this page has recovered.</Typography></CardContent>}
           </>}
         <div className={classes.pager}>
@@ -629,12 +632,12 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
         </div>
       </Card>
     </Grid>
-    <Grid item xs={12} md={7}>
+    <Grid item xs={12}>
       {/* Kept mounted so a half-written report survives a look at an alert; paused while hidden or the inbox itself is not on screen. */}
       <div hidden={!reporting}><ReportTriage evaluate={evaluate} liveDelayMs={liveDelayMs} live={live} setLive={setLive} forcedOff={forcedOff} active={active && reporting} /></div>
-      {reporting ? null : selected ? <Card component="article" aria-label="AWS alert details">
+      {reporting || !detailsOpen ? null : selected ? <Card ref={detailsRef} id="jev-alert-details" component="article" aria-label="AWS alert details">
         <CardHeader className={classes.cardHeader} title={selected.title} subheader={selected.description || 'No reason supplied.'} titleTypographyProps={{ variant: 'h5', component: 'h3' }}
-          action={<Chip size="small" variant="outlined" style={{ margin: '12px 8px 0 0' }} label={selected.metadata ? `AWS state: ${selected.metadata.awsState}` : 'Details unavailable'} />} />
+          action={<><Chip size="small" variant="outlined" label={selected.metadata ? `AWS state: ${selected.metadata.awsState}` : 'Details unavailable'} /><Button size="small" onClick={() => { setDetailsOpen(false); setPickedId(''); }}>Close details</Button></>} />
         <Divider />
         <CardContent>
           {showingStale && <Typography variant="caption" color="textSecondary" role="status" component="p" style={{ marginBottom: 16 }}>This alert is no longer on this page of the inbox.</Typography>}
@@ -663,6 +666,7 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
           </> : <Typography variant="body2" color="textSecondary">{missingDetailsNote(selected)}</Typography>}
           <Divider style={{ margin: '24px 0 16px' }} />
           <Typography variant="caption" color="textSecondary" component="dl" className={classes.meta}>
+            <dt>Severity</dt><dd>{selected.severity ?? 'Not provided'} (notification priority)</dd>
             <dt>Received</dt><dd>{selected.created ? <time dateTime={selected.created}>{instantLabel(selected.created)}</time> : 'Not reported'}{selected.updated ? <> · updated <time dateTime={selected.updated}>{instantLabel(selected.updated)}</time></> : null}</dd>
             {selected.metadata && <><dt>Alarm ARN</dt><dd><code>{selected.metadata.alarmArn}</code></dd>
             <dt>Region</dt><dd>{selected.metadata.region || 'Not reported'}</dd>

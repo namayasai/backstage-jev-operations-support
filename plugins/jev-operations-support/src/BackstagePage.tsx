@@ -71,6 +71,7 @@ export interface JevPageProps {
   contextNote?: React.ReactNode;
   techDocs?: TechDocsOptions;
   showAlerts?: boolean;
+  page?: 'alerts' | 'playground';
   /** Restrict the document checks offered here, e.g. on an entity tab. */
   reviewWorkflows?: WorkflowId[];
   /** Quiet period before an automatic check is sent; overridable so tests do not need a real wait. */
@@ -102,7 +103,7 @@ class AlertsUnavailableError extends Error {
  * Two places, by what the reader came to do: alerts that arrived on their own, and a
  * workflow to try by hand.
  */
-export function JevPage({ initialText, contextNote, techDocs, showAlerts = true, reviewWorkflows = entityReviewWorkflowIds, liveDelayMs }: JevPageProps) {
+export function JevPage({ initialText, contextNote, techDocs, showAlerts = true, reviewWorkflows = entityReviewWorkflowIds, liveDelayMs, page }: JevPageProps) {
   const discovery = useApi(discoveryApiRef);
   const fetchApi = useApi(fetchApiRef);
   const catalog = useApi(catalogApiRef);
@@ -125,20 +126,22 @@ export function JevPage({ initialText, contextNote, techDocs, showAlerts = true,
     const response = await fetchApi.fetch(url.toString());
     if (response.status === 404) {
       // Without the module there is no inbox to land on; open the first view that works instead.
-      if (!chose.current) open('playground');
+      if (!page && !chose.current) open('playground');
       throw new AlertsUnavailableError('AWS alerts are unavailable: install and configure the optional AWS notifications backend module (jevOperationsSupport.awsNotifications).');
     }
     if (!response.ok) throw await responseError(response, 'AWS alerts could not be loaded');
     let raw: unknown;
     try { raw = await response.json(); } catch { throw new Error('Notifications returned a non-JSON response.'); }
     return parseAlertNotificationPage(raw);
-  }, [discovery, fetchApi]);
+  }, [discovery, fetchApi, page]);
   const renderCandidateLink = useCallback((candidate: Candidate) => {
     try { const ref = parseEntityRef(candidate.entityRef!); return <Link to={entityRoute({ ...ref, kind: ref.kind.toLocaleLowerCase('en-US') })}>Open {candidate.title} in catalog →</Link>; }
     catch { return <code>{candidate.entityRef}</code>; }
   }, [entityRoute]);
   const review = <JevWorkbench evaluate={evaluate} workflowIds={reviewWorkflows} loadCandidates={loadCandidates} renderCandidateLink={renderCandidateLink} initialText={initialText} contextNote={contextNote} techDocs={techDocs} liveDelayMs={liveDelayMs} />;
   if (!showAlerts) return review;
+  if (page === 'alerts') return <Content><AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} loadOwners={loadOwners} renderCandidateLink={renderCandidateLink} liveDelayMs={liveDelayMs} /></Content>;
+  if (page === 'playground') return <Content><JevWorkbench evaluate={evaluate} workflowIds={playgroundWorkflowIds} loadCandidates={loadCandidates} renderCandidateLink={renderCandidateLink} initialText={initialText} liveDelayMs={liveDelayMs} /></Content>;
   return <Content>
     <Tabs value={view} indicatorColor="primary" textColor="primary" onChange={(_, next: View) => { chose.current = true; open(next); }} aria-label="Operations Support views" style={{ marginBottom: 24 }}>
       {views.map(item => <Tab key={item.id} value={item.id} label={item.label} id={`jev-tab-${item.id}`} aria-controls={`jev-tabpanel-${item.id}`} />)}
@@ -152,7 +155,11 @@ export function JevPage({ initialText, contextNote, techDocs, showAlerts = true,
 
 /** The same views under a Backstage page header, for apps that mount the page as a plain route. */
 export function JevStandalonePage(props: JevPageProps) {
-  return <Page themeId="tool"><Header title="Operations Support" subtitle="Alerts assessed by Jev as they arrive, and a playground to try a workflow by hand" /><JevPage {...props} /></Page>;
+  return <Page themeId="tool"><Header title="Playground" subtitle="Try Jev checks with your own input" /><JevPage {...props} page="playground" /></Page>;
+}
+
+export function JevAlertsStandalonePage(props: JevPageProps) {
+  return <Page themeId="tool"><Header title="Alerts" subtitle="Notifications and Jev assessments" /><JevPage {...props} page="alerts" /></Page>;
 }
 
 /** On a service, the docs are already known and load on their own into the editor; nothing is
