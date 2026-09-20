@@ -1,10 +1,106 @@
 import { z } from 'zod';
 import { createPermission } from '@backstage/plugin-permission-common';
+import { parseEntityRef, stringifyEntityRef, type Entity } from '@backstage/catalog-model';
 
 export const workflowIds = ['readiness', 'templates', 'ownership', 'incident', 'change-risk', 'search'] as const;
 export type WorkflowId = typeof workflowIds[number];
 export const MAX_EVALUATION_BYTES = 24000;
 export const jevEvaluatePermission = createPermission({ name: 'jev-operations-support.evaluate', attributes: { action: 'create' } });
+
+/**
+ * Every code the AWS notifications module's owner suggestion can be stored with
+ * (`plugins/jev-operations-support-aws-notifications/src/index.ts`, which
+ * re-exports this for compatibility). Lives here, not there, so the frontend can
+ * import it without reaching into a backend-only package's source — a jsdom test
+ * importing backend-module source (knex, express, ...) is fragile, and the
+ * common package is already a dependency of both. `jev-not-configured` and
+ * `jev-demo-mode` mirror the same reason incident triage reports for the same
+ * installation state; `evaluation-pending` and `evaluation-capacity-reached`
+ * mirror the whole-alarm capacity reasons (the owner call never claims a
+ * capacity slot of its own); the rest are specific to the owner call itself.
+ */
+export const awsAlertOwnerErrorCodes = [
+  'jev-not-configured',
+  'jev-demo-mode',
+  'evaluation-pending',
+  'evaluation-capacity-reached',
+  'incident-not-evaluated',
+  'no-catalog-groups',
+  'catalog-unavailable',
+  'alert-context-too-large',
+  'invalid-owner-request',
+  'jev-busy',
+  'jev-error',
+] as const;
+export type AwsAlertOwnerErrorCode = typeof awsAlertOwnerErrorCodes[number];
+
+/**
+ * Why the Tech Insights ownerless-entity retriever
+ * (`plugins/jev-operations-support-tech-insights/src/index.ts`,
+ * `jevOwnerSuggestionFactRetriever`) picked up an entity in the first place,
+ * stored as its `selection` fact — always present on a row, evaluated or not,
+ * since selection happens before the Jev call. Lives here so the frontend entity
+ * card can read the same closed set, and reuse the same `isUnownedOwner` rule
+ * below, without importing a backend-only package's source.
+ */
+export const jevOwnerSuggestionSelections = ['unowned', 'owner-not-found'] as const;
+export type JevOwnerSuggestionSelection = typeof jevOwnerSuggestionSelections[number];
+
+/**
+ * Every code the Tech Insights ownerless-entity retriever can store its `reason`
+ * fact with — only ever a *failure* to produce a suggestion (installation state,
+ * catalog outage, empty candidate list, malformed request, or a provider
+ * failure), distinct from `selection` above. `reason` is the empty string when
+ * `evaluationStatus` is `evaluated`. Lives here for the same reason
+ * `awsAlertOwnerErrorCodes` does: so the frontend entity card can read the
+ * closed set without importing a backend-only package's source.
+ */
+export const jevOwnerSuggestionReasons = [
+  'jev-not-configured',
+  'jev-demo-mode',
+  'catalog-unavailable',
+  'no-catalog-groups',
+  'invalid-owner-request',
+  'jev-busy',
+  'jev-timeout',
+  'jev-error',
+  'retriever-error',
+] as const;
+export type JevOwnerSuggestionReason = typeof jevOwnerSuggestionReasons[number];
+
+/**
+ * The default "no real owner" values the ownerless-entity retriever and its
+ * matching entity card compare `spec.owner` against (see `isUnownedOwner`). A
+ * host that overrides `unownedValues` in `jevOperationsSupport.techInsights.
+ * ownerSuggestion` must pass the same list to `EntityJevOwnerSuggestionCard`'s
+ * `unownedValues` prop — the card has no way to read backend config — or the
+ * card and the retriever can disagree about which entities are unowned.
+ */
+export const defaultUnownedOwnerValues = ['unknown', 'guests', 'group:default/guests', ''] as const;
+
+/**
+ * Whether a raw `spec.owner` value counts as "no real owner": empty or missing
+ * always does, regardless of `unownedValues`; otherwise compared
+ * case-insensitively against `unownedValues`, both as written and as the
+ * normalised `group:namespace/name` ref form (so `unknown`, `Unknown`, and, if
+ * listed, `group:default/unknown` are all recognised the same way). Shared by
+ * the Tech Insights ownerless-entity retriever (the write side, which decides
+ * whether to evaluate) and `EntityJevOwnerSuggestionCard` (the read side, which
+ * must derive "no owner is set" from the *live* catalog entity, never from a
+ * possibly-stale stored fact) so both apply exactly the same rule.
+ */
+export function isUnownedOwner(owner: string, unownedValues: readonly string[] = defaultUnownedOwnerValues): boolean {
+  const trimmed = owner.trim();
+  if (!trimmed) return true;
+  const unownedSet = new Set(unownedValues.map(value => value.trim().toLowerCase()));
+  if (unownedSet.has(trimmed.toLowerCase())) return true;
+  try {
+    const parsed = parseEntityRef(trimmed, { defaultKind: 'group', defaultNamespace: 'default' });
+    return unownedSet.has(stringifyEntityRef(parsed).toLowerCase());
+  } catch {
+    return false;
+  }
+}
 
 export const candidateSchema = z.object({
   id: z.string().trim().min(1).max(200),
@@ -57,6 +153,126 @@ export type EvaluationResult = {
   workflow: WorkflowId; model: string; evaluatedAt: string; mode: 'live' | 'demo';
   findings: Finding[]; needsReview: boolean;
 };
+
+/**
+ * Deterministic catalog listing order shared by every caller that turns a page of
+ * catalog entities into candidates: the frontend's `templates`/`ownership` pickers
+ * (`plugins/jev-operations-support/src/catalogCandidates.ts`) and the AWS
+ * notifications module's owner-suggestion catalog read
+ * (`plugins/jev-operations-support-aws-notifications/src/index.ts`). Keeping the
+ * order here means a "first 20 groups" page cannot silently differ between them.
+ */
+export const catalogCandidateOrderFields = [
+  { field: 'kind', order: 'asc' as const },
+  { field: 'metadata.namespace', order: 'asc' as const },
+  { field: 'metadata.name', order: 'asc' as const },
+];
+
+/**
+ * Truncate to at most `maxUnits` UTF-16 code units without ever splitting a surrogate
+ * pair. Cuts on the unit boundary and backs off one unit only when that boundary lands
+ * on a lone high surrogate — cheap even for very large input, unlike enumerating every
+ * code point first. Shared by every caller that fits text into a fixed-width field:
+ * `entityToCandidate` below and the search plugin's own result shortlisting.
+ */
+export function truncateCodePoints(text: string, maxUnits: number): string {
+  if (text.length <= maxUnits) return text;
+  let end = maxUnits;
+  if (end > 0) {
+    const code = text.charCodeAt(end - 1);
+    if (code >= 0xd800 && code <= 0xdbff) end -= 1;
+  }
+  return text.slice(0, end);
+}
+
+/** Truncate to at most `maxBytes` UTF-8 bytes without ever splitting a multi-byte character. */
+function truncateToBytes(text: string, maxBytes: number): string {
+  if (maxBytes <= 0) return '';
+  const bytes = new TextEncoder().encode(text);
+  if (bytes.length <= maxBytes) return text;
+  let end = maxBytes;
+  while (end > 0) {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, end)); }
+    catch { end -= 1; }
+  }
+  return '';
+}
+
+/**
+ * Turn one catalog entity into a Jev candidate. This is the single mapping used by
+ * both the frontend catalog picker and the AWS module's automatic owner suggestion,
+ * so a Group's title and description text sent to Jev is identical whichever path
+ * produced the candidate.
+ */
+export function entityToCandidate(entity: Entity): Candidate {
+  return {
+    id: stringifyEntityRef(entity),
+    entityRef: stringifyEntityRef(entity),
+    title: truncateCodePoints(entity.metadata.title ?? entity.metadata.name, 200),
+    description: truncateCodePoints([entity.metadata.description, entity.kind, ...(entity.metadata.tags ?? [])].filter(Boolean).join(' · '), 1500),
+  };
+}
+
+export type FitCandidatesResult = { candidates: Candidate[]; shortened: boolean; dropped: number };
+
+/**
+ * Fits a candidate shortlist under the shared byte budget without ever failing on size
+ * when shrinking would make it fit. Candidates are first dropped from the tail — only as
+ * many as necessary, and only when even every description emptied would not fit — until
+ * the *kept* candidates' title-only rendition fits. Descriptions for exactly those kept
+ * candidates are then (re-)fitted from an even per-candidate byte allowance, found by a
+ * bounded binary search over the real (JSON-escaped) request size — not a fixed
+ * per-attempt decrement, which could collapse excerpts to almost nothing after a single
+ * overshoot on escape-heavy text (control characters, quotes, backslashes). Running the
+ * search after dropping (rather than leaving dropped-to survivors at their empty
+ * title-only string) means a survivor regains as much of its own description as the
+ * now-smaller candidate list leaves room for. Every truncation is UTF-8/UTF-16 safe: a
+ * multi-byte character or surrogate pair is never split. Pure, and used by the AWS
+ * notifications module's owner-suggestion path; not yet used by the search plugin's own
+ * shortlisting, which has its own, older, near-identical logic.
+ */
+export function fitCandidatesToBudget(input: { workflow: WorkflowId; text: string; candidates: Candidate[] }): FitCandidatesResult {
+  const { workflow, text, candidates } = input;
+  const bytesFor = (list: Candidate[]) => evaluationRequestByteLength({ workflow, text, candidates: list });
+  if (candidates.length === 0 || bytesFor(candidates) <= MAX_EVALUATION_BYTES) {
+    return { candidates, shortened: false, dropped: 0 };
+  }
+
+  // Drop from the tail, only as far as necessary, until the kept candidates' title-only
+  // rendition fits. When no dropping is needed at all, `kept` stays the full list.
+  let kept = candidates;
+  let keptTitleOnly = candidates.map(candidate => ({ ...candidate, description: '' }));
+  while (keptTitleOnly.length > 1 && bytesFor(keptTitleOnly) > MAX_EVALUATION_BYTES) {
+    kept = kept.slice(0, -1);
+    keptTitleOnly = keptTitleOnly.slice(0, -1);
+  }
+  if (bytesFor(keptTitleOnly) > MAX_EVALUATION_BYTES) {
+    // Even a single title-only candidate does not fit alongside the text: nothing is left.
+    return { candidates: [], shortened: true, dropped: candidates.length };
+  }
+  const dropped = candidates.length - kept.length;
+
+  // Re-run the allowance search for exactly the kept candidates, so a survivor of the
+  // drop step above regains as much of its own description as now fits, rather than
+  // being left at the empty string the drop step used only to decide how many to keep.
+  const overheadBytes = bytesFor(keptTitleOnly);
+  const available = MAX_EVALUATION_BYTES - overheadBytes;
+  const evenAllowance = Math.max(0, Math.floor(available / kept.length));
+  // Bounded binary search over the per-candidate byte allowance: `lo = 0` always fits
+  // (that is exactly `keptTitleOnly`, already checked above), so the search always
+  // terminates with a valid, fitting shortlist. 16 attempts comfortably covers the
+  // 1500-character description cap (log2(1500) < 11).
+  let lo = 0;
+  let hi = evenAllowance;
+  let fitted = keptTitleOnly;
+  for (let attempt = 0; attempt < 16 && lo <= hi; attempt++) {
+    const mid = Math.floor((lo + hi) / 2);
+    const attemptCandidates = kept.map(candidate => ({ ...candidate, description: truncateToBytes(candidate.description, mid) }));
+    if (bytesFor(attemptCandidates) <= MAX_EVALUATION_BYTES) { fitted = attemptCandidates; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  return { candidates: fitted, shortened: true, dropped };
+}
 
 export const workflows: { id: WorkflowId; title: string; description: string; prompt: string; candidateKind?: string }[] = [
   { id: 'readiness', title: 'Operational readiness', description: 'Check whether a runbook contains the information needed to operate a service.', prompt: 'Paste a README, runbook, or TechDocs excerpt.' },
@@ -207,6 +423,23 @@ export function demoEvaluation(raw: EvaluationRequest): EvaluationResult {
     }
   });
   return { ...summarize(input, validateResponse({ model: 'fixture — not Jev', answers }, request), checks), mode: 'demo' };
+}
+
+/** The label shown for each finding status, shared by the workbench UI and the GitHub report comment. */
+export const findingStatusLabels: Record<Finding['status'], string> = { pass: 'Clear', attention: 'Attention', review: 'Needs review' };
+
+/** Shown wherever a result is presented, so a reader never mistakes an unestablished condition for a disproven one. */
+export const negativeFindingDisclaimer = 'A negative finding means the supplied context did not establish the condition. It does not prove the condition is absent in the real service.';
+
+/** A yes/no check reads as an answer to its question; the probability alone says nothing to a newcomer. Shared by the workbench UI and the GitHub report comment so both describe a finding the same way. */
+export function formatFindingValue(finding: Pick<Finding, 'kind' | 'value'>): string {
+  if (finding.kind === 'noul') {
+    const probability = Number(finding.value);
+    const percent = `${Math.round(probability * 100)}%`;
+    return probability >= 0.8 ? `Yes — found in the text (${percent})` : probability <= 0.2 ? `No — not found in the text (${percent})` : `Unclear — the text is ambiguous (${percent})`;
+  }
+  if (finding.kind === 'score') return `${Number(finding.value).toFixed(2)} / 3`;
+  return String(finding.value);
 }
 
 export const sampleCandidates: Candidate[] = [

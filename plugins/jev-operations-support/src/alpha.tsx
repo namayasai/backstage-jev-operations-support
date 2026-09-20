@@ -1,5 +1,5 @@
 import { createFrontendPlugin, createRouteRef, PageBlueprint } from '@backstage/frontend-plugin-api';
-import { EntityContentBlueprint } from '@backstage/plugin-catalog-react/alpha';
+import { EntityCardBlueprint, EntityContentBlueprint } from '@backstage/plugin-catalog-react/alpha';
 
 const rootRouteRef = createRouteRef();
 const jevPage = PageBlueprint.make({
@@ -19,4 +19,31 @@ const jevEntityContent = EntityContentBlueprint.make({
   },
 });
 
-export default createFrontendPlugin({ pluginId: 'jev-operations-support', routes: { root: rootRouteRef }, extensions: [jevPage, jevEntityContent] });
+// Read-only entity cards backed by the optional Tech Insights module's scheduled results
+// (see entityCards.tsx). `filter` uses the object-predicate form of `@backstage/plugin-catalog-react/alpha`'s
+// `EntityCardBlueprint` (verified in node_modules: its own `resolveEntityFilterData` logs a
+// deprecation warning for a *string* filter expression like "kind:component" and converts a
+// predicate object with `filterPredicateToFilterFunction` from `@backstage/filter-predicates`,
+// so the object form below is the current, non-deprecated one). The readiness retriever only
+// ever evaluates Component entities server-side; the owner-suggestion retriever's default
+// `kinds` are Component/API/Resource/System.
+const jevReadinessCard = EntityCardBlueprint.make({
+  name: 'readiness',
+  params: {
+    filter: { kind: 'Component' },
+    loader: () => import('./entityCards').then(m => <m.EntityJevReadinessCard />),
+  },
+});
+const jevOwnerSuggestionCard = EntityCardBlueprint.make({
+  name: 'owner-suggestion',
+  params: {
+    filter: { kind: { $in: ['Component', 'API', 'Resource', 'System'] } },
+    loader: () => import('./entityCards').then(m => <m.EntityJevOwnerSuggestionCard />),
+  },
+});
+
+export default createFrontendPlugin({
+  pluginId: 'jev-operations-support',
+  routes: { root: rootRouteRef },
+  extensions: [jevPage, jevEntityContent, jevReadinessCard, jevOwnerSuggestionCard],
+});

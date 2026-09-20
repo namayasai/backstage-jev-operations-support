@@ -4,9 +4,9 @@ Six focused decision workflows for [Backstage](https://backstage.io), powered by
 
 **Status: experimental. Current release 0.3.0, covering all five packages.** Version 0.2.0 was verified in a local Backstage 1.55.0 host with all six workflows calling the real Jev API, and 0.3.0 adds a separately recorded integration run. Includes an authenticated backend, legacy and new frontend extensions, a key-free fixture playground, and the opt-in integrations described below. No generated explanations or autonomous infrastructure changes.
 
-![Jev Operations Support running inside Backstage 1.55.0](docs/backstage-workbench.png)
+![Jev Operations Support AWS alerts inbox inside Backstage 1.55.0, showing a synthetic CloudWatch fixture alarm](docs/backstage-workbench.png)
 
-![Live Jev readiness results inside Backstage](docs/backstage-result.png)
+![Readiness checks in the Playground (backend demo mode: illustrative results)](docs/backstage-result.png)
 
 ## Workflows
 
@@ -21,6 +21,8 @@ Six focused decision workflows for [Backstage](https://backstage.io), powered by
 
 Template, ownership, and search workflows can load up to 20 entries through the user's Backstage Catalog API. An optional keyword filter narrows that shortlist. Edit the descriptions or add candidates manually before evaluation. Results link back to their catalog entities.
 
+The template advisor and semantic reranking workflows are also available as standalone components, placed where that decision is actually made rather than on a separate page: `JevTemplateAdvisor` (a recommendation card, any page) and `JevRerankedResults` (reorders a Backstage search page's results in place of `<SearchResult>`, needs the optional `@backstage/plugin-search-react` peer dependency). See the installation guide's "Search and Scaffolder integrations" section.
+
 ## Try the interface
 
 Node.js 22 is the verified runtime:
@@ -32,7 +34,7 @@ npm ci
 npm run dev
 ```
 
-Open the localhost URL, choose a workflow, and click **Load example input**, then **Show example result**. This playground deliberately uses fixed fixtures: it does not call Jev or judge edited text. Live evaluation is available through the Backstage backend and the smoke-test command below.
+Open the localhost URL. The playground opens on the alert inbox, grouped by the impact Jev read from each alarm; the **Playground** tab lets you try any of the other five workflows by hand, either by choosing "Check now" or by turning on the Live switch to check input as you edit it (Live is off by default, opt-in per browser, same as in a real Backstage instance). This playground deliberately uses fixed fixtures: it does not call Jev or judge edited text. Live evaluation is available through the Backstage backend and the smoke-test command below.
 
 The repository's `.npmrc` uses `legacy-peer-deps` because Backstage's optional test peer dependencies produce conflicting React type resolutions under npm. Runtime React is pinned to 18 through root overrides; TypeScript and integration adapter tests check the installed versions. Use your Backstage application's existing package manager when integrating.
 
@@ -76,8 +78,8 @@ The [Backstage host report](docs/backstage-host-smoke.json) records browser-to-b
 ```text
 plugins/jev-operations-support-common/           Typed workflows, input/output validation, thresholds, permission
 plugins/jev-operations-support-backend/          Authenticated API, rate limits, Jev transport, GitHub webhook, /client export
-plugins/jev-operations-support/                  Workbench, AWS alert inbox, catalog adapter, legacy and new frontend extensions
-plugins/jev-operations-support-tech-insights/    Optional Tech Insights fact retriever
+plugins/jev-operations-support/                  Workbench, AWS alert inbox, read-only entity cards, catalog adapter, legacy and new frontend extensions
+plugins/jev-operations-support-tech-insights/    Optional Tech Insights fact retrievers: readiness evidence, ownerless-entity owner suggestion
 plugins/jev-operations-support-aws-notifications/ Optional CloudWatch alert module
 examples/playground/                             Standalone fixture UI using the same workbench component
 ```
@@ -91,8 +93,8 @@ All four are opt-in, inactive until configured, and reuse the same key, model, a
 | Integration | What it does |
 | --- | --- |
 | Entity TechDocs loading | Loads a selected TechDocs page through the signed-in user's fetch API into the editable context. Never evaluates automatically. |
-| [Tech Insights facts](docs/tech-insights.md) | A scheduled fact retriever for entities that carry an explicit opt-in annotation, plus an example JSON-rules check. Separate fetch, evaluation, and evidence states; no health score. |
-| [GitHub PR webhook](docs/github-webhook.md) | A signature-verified pull request webhook that evaluates changed Markdown documents. |
+| [Tech Insights facts](docs/tech-insights.md) | A scheduled fact retriever for entities that carry an explicit opt-in annotation, plus an example JSON-rules check. Separate fetch, evaluation, and evidence states; no health score. A second, independently opt-in retriever suggests a responsible catalog Group for entities with no real owner; it never reads documentation and never writes `spec.owner`. Two read-only entity cards (`EntityJevReadinessCard`, `EntityJevOwnerSuggestionCard`) show these retrievers' latest scheduled results on the entity page — no Live switch, no evaluation triggered from the card. |
+| [GitHub PR webhook](docs/github-webhook.md) | A signature-verified pull request webhook that evaluates changed Markdown documents, plus an opt-in `change-risk` review of the pull request diff itself. |
 | [AWS CloudWatch alerts](docs/aws-notifications.md) | CloudWatch → SNS → SQS → Backstage Events → Notifications, with a receive-time Jev incident assessment, an inbox in the frontend, and a local manual re-check. Adds one plugin-owned table and one authenticated read endpoint. |
 
 With `jevOperationsSupport.demoMode: true`, no integration calls the provider even when a key is configured: the webhook refuses with 503, and the Tech Insights and AWS modules record honest not-evaluated results rather than storing fixtures.

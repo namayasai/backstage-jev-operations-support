@@ -8,3 +8,4 @@ app-config.local.yaml
 *.tgz
 .DS_Store
 .local/
+.claude/worktrees/

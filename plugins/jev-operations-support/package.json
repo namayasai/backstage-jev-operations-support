@@ -27,6 +27,16 @@
       "import": "./dist/alpha.mjs",
       "require": "./dist/alpha.js"
     },
+    "./search": {
+      "types": "./dist/search.d.ts",
+      "import": "./dist/search.mjs",
+      "require": "./dist/search.js"
+    },
+    "./scaffolder": {
+      "types": "./dist/scaffolder.d.ts",
+      "import": "./dist/scaffolder.mjs",
+      "require": "./dist/scaffolder.js"
+    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,
@@ -42,19 +52,31 @@
     ]
   },
   "scripts": {
-    "build": "tsup src/index.ts src/alpha.tsx --format cjs,esm --dts --clean"
+    "build": "tsup src/index.ts src/alpha.tsx src/search.tsx src/scaffolder.tsx --format cjs,esm --dts --clean"
   },
   "dependencies": {
     "@namayasai/backstage-plugin-jev-operations-support-common": "0.3.0",
     "@backstage/core-plugin-api": "^1.12.10",
     "@backstage/frontend-plugin-api": "^0.18.1",
     "@backstage/plugin-catalog-react": "^3.2.3",
-    "@backstage/catalog-model": "^1.10.1"
+    "@backstage/catalog-model": "^1.10.1",
+    "@backstage/core-components": "^0.18.14",
+    "@material-ui/core": "^4.12.4",
+    "@material-ui/lab": "4.0.0-alpha.61"
   },
   "peerDependencies": {
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
-    "react-router-dom": "^6.30.2"
+    "react-router-dom": "^6.30.2",
+    "@backstage/plugin-search-react": "^1.11.8"
+  },
+  "peerDependenciesMeta": {
+    "@backstage/plugin-search-react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@backstage/plugin-search-common": "^1.2.25"
   },
   "homepage": "https://github.com/namayasai/backstage-jev-operations-support#readme",
   "bugs": {

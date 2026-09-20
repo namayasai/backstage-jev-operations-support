@@ -1,6 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
-import { evaluationRequestSchema, workflowIds, type EvaluationRequest, type EvaluationResult, type Finding } from '@namayasai/backstage-plugin-jev-operations-support-common';
-import { jevStyles } from './Workbench';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Box, Button, Card, CardContent, CardHeader, Chip, Divider, FormControlLabel, Grid, List, ListItem, ListItemText, ListSubheader, Switch, TextField, Typography, makeStyles } from '@material-ui/core';
+import { Alert } from '@material-ui/lab';
+import { evaluationRequestSchema, type Candidate, type EvaluationRequest, type EvaluationResult } from '@namayasai/backstage-plugin-jev-operations-support-common';
+import { isEvaluationResult } from './evaluationResult';
+import { FindingCounts, FindingList, PendingChecks } from './Findings';
+import { LiveSwitch } from './LiveSwitch';
+import { useLiveEvaluation, useLivePreference, type EvaluateOptions } from './useLiveEvaluation';
+
+// A stable, empty candidate list: passing a fresh `[]` on every render would defeat memoization downstream.
+const NO_CANDIDATES: Candidate[] = [];
 
 export const AWS_ALERT_TOPIC = 'jev-aws-alerts';
 const alertStates = ['ALARM', 'OK', 'INSUFFICIENT_DATA'] as const;
@@ -17,6 +25,16 @@ export interface JevAwsAlertMetadata {
   evaluationStatus: EvaluationStatus;
   result?: EvaluationResult;
   errorCode?: string;
+  /** Owner suggestion made at receipt (`jevOperationsSupport.awsNotifications.ownerSuggestion`).
+   * Absent entirely on installs that never enabled it, or for a non-`ALARM` alert. */
+  ownerStatus?: EvaluationStatus;
+  ownerResult?: EvaluationResult;
+  /** The shortlist actually sent (titles only), so a runner-up candidate in the result's
+   * probability breakdown can be labelled instead of showing a raw `c0`/`c1` key. */
+  ownerCandidates?: { id: string; title: string }[];
+  /** The shortlist was shortened or had candidates dropped to fit the shared byte budget. */
+  ownerShortened?: boolean;
+  ownerErrorCode?: string;
 }
 
 export interface AwsAlertNotification {
@@ -38,6 +56,8 @@ export interface AwsAlertNotification {
   detailsUpdated?: string;
   /** The stored details carried a result that does not match the evaluation contract. */
   resultUnreadable: boolean;
+  /** The stored owner result does not match the evaluation contract or the `ownership` workflow. */
+  ownerResultUnreadable: boolean;
 }
 
 export interface AlertNotificationPage {
@@ -48,7 +68,20 @@ export interface AlertNotificationPage {
 
 export interface AlertInboxProps {
   loadNotifications: (offset: number, limit: number) => Promise<AlertNotificationPage>;
-  evaluate: (request: EvaluationRequest) => Promise<EvaluationResult>;
+  evaluate: (request: EvaluationRequest, options?: EvaluateOptions) => Promise<EvaluationResult>;
+  /** Catalog teams to choose an owner from. Without it, no owner suggestion is offered. */
+  loadOwners?: () => Promise<Candidate[]>;
+  renderCandidateLink?: (candidate: Candidate) => ReactNode;
+  /** How often the list is refreshed in the background; 0 turns it off. */
+  pollMs?: number;
+  /** Quiet period before a pasted report is assessed. */
+  liveDelayMs?: number;
+  /** Assess an active alarm that arrived without a Jev result as soon as it is opened. */
+  autoCheck?: boolean;
+  /** Whether this inbox is the view the reader is currently looking at. Hidden views poll and assess nothing. */
+  active?: boolean;
+  /** `false` forces automatic sends off for this component regardless of the reader's preference; omitted or `true` follows the reader's preference. */
+  live?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -71,14 +104,24 @@ function instantLabel(value: string): string {
   return `${new Date(value).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 
-function isEvaluationResult(value: unknown): value is EvaluationResult {
-  if (!isRecord(value) || typeof value.model !== 'string' || typeof value.evaluatedAt !== 'string' || !['live', 'demo'].includes(String(value.mode)) || typeof value.needsReview !== 'boolean' || !Array.isArray(value.findings)) return false;
-  if (!workflowIds.includes(value.workflow as EvaluationResult['workflow'])) return false;
-  return value.findings.every(finding => isRecord(finding) && typeof finding.id === 'string' && typeof finding.title === 'string' && typeof finding.statement === 'string' && ['pass', 'attention', 'review'].includes(String(finding.status)));
+/** The stored owner result must also be an `ownership` evaluation: any other workflow is not a stored owner suggestion. */
+function isOwnerResult(value: unknown): value is EvaluationResult {
+  return isEvaluationResult(value) && value.workflow === 'ownership';
+}
+
+/**
+ * Defensive, best-effort parse of the stored owner shortlist: an array of at most 20
+ * records with a string `id` and `title`. This is supplementary display data, not a
+ * safety-relevant contract like `ownerResult`, so a malformed value is silently
+ * ignored (falling back to raw `c0`/`c1`-style keys being shown as "Candidate N" by
+ * `Findings.tsx`) rather than flagged as unreadable or hiding anything.
+ */
+function isOwnerCandidateList(value: unknown): value is { id: string; title: string }[] {
+  return Array.isArray(value) && value.length <= 20 && value.every(item => isRecord(item) && typeof item.id === 'string' && typeof item.title === 'string');
 }
 
 /** Parse the structured details the backend restored, or report them as unreadable. */
-function parseDetails(metadata: Record<string, unknown>): { metadata: JevAwsAlertMetadata; resultUnreadable: boolean } | undefined {
+function parseDetails(metadata: Record<string, unknown>): { metadata: JevAwsAlertMetadata; resultUnreadable: boolean; ownerResultUnreadable: boolean } | undefined {
   if (metadata.source !== 'aws-cloudwatch' || !alertStates.includes(metadata.awsState as AwsState) || !evaluationStatuses.includes(metadata.evaluationStatus as EvaluationStatus)) return undefined;
   const context = stringValue(metadata.context);
   const alarmArn = stringValue(metadata.alarmArn);
@@ -86,8 +129,14 @@ function parseDetails(metadata: Record<string, unknown>): { metadata: JevAwsAler
   if (!context || !alarmArn || typeof metadata.region !== 'string') return undefined;
   // An unusable result must not hide the alarm itself; the AWS state stays the authoritative signal.
   const result = isEvaluationResult(metadata.result) ? metadata.result : undefined;
+  // Owner fields are absent entirely on installs that never enabled owner suggestion; only a
+  // present-but-unreadable ownerStatus is dropped rather than shown as something it is not.
+  const ownerStatus = evaluationStatuses.includes(metadata.ownerStatus as EvaluationStatus) ? (metadata.ownerStatus as EvaluationStatus) : undefined;
+  const ownerResult = isOwnerResult(metadata.ownerResult) ? metadata.ownerResult : undefined;
+  const ownerCandidates = isOwnerCandidateList(metadata.ownerCandidates) ? metadata.ownerCandidates : undefined;
   return {
     resultUnreadable: metadata.result !== undefined && !result,
+    ownerResultUnreadable: metadata.ownerResult !== undefined && !ownerResult,
     metadata: {
       source: 'aws-cloudwatch',
       context,
@@ -97,6 +146,11 @@ function parseDetails(metadata: Record<string, unknown>): { metadata: JevAwsAler
       evaluationStatus: metadata.evaluationStatus as EvaluationStatus,
       ...(result ? { result } : {}),
       ...(stringValue(metadata.errorCode) ? { errorCode: stringValue(metadata.errorCode) } : {}),
+      ...(ownerStatus ? { ownerStatus } : {}),
+      ...(ownerResult ? { ownerResult } : {}),
+      ...(ownerCandidates ? { ownerCandidates } : {}),
+      ...(metadata.ownerShortened === true ? { ownerShortened: true as const } : {}),
+      ...(stringValue(metadata.ownerErrorCode) ? { ownerErrorCode: stringValue(metadata.ownerErrorCode) } : {}),
     },
   };
 }
@@ -126,6 +180,7 @@ function parseNotification(row: unknown, index: number): AwsAlertNotification | 
     detailsUnreadable: Boolean(raw) && !details,
     ...(raw && timestampValue(raw.updatedAt) ? { detailsUpdated: timestampValue(raw.updatedAt) } : {}),
     resultUnreadable: details?.resultUnreadable ?? false,
+    ownerResultUnreadable: details?.ownerResultUnreadable ?? false,
   };
 }
 
@@ -163,59 +218,282 @@ function missingDetailsNote(notification: AwsAlertNotification): string {
   return `${cause} The alarm state, context, and any Jev result cannot be shown for this alert, and a re-check is not offered. The notification above is unchanged.`;
 }
 
-function statusClass(status: Finding['status']): string {
-  return `jev-status jev-${status}`;
+/**
+ * One place mapping the owner suggestion's stable error codes to a readable sentence.
+ * This must cover every code in the backend's `awsAlertOwnerErrorCodes` (see
+ * `plugins/jev-operations-support-aws-notifications/src/index.ts`); a test in
+ * `AlertInbox.test.tsx` checks that coverage.
+ */
+export const ownerErrorMessages: Record<string, string> = {
+  'jev-not-configured': 'No Jev API key is configured, so no owner was suggested automatically for this alert.',
+  'jev-demo-mode': 'This backend runs in demo mode, so no owner was suggested automatically for this alert.',
+  'incident-not-evaluated': 'Automatic owner suggestion did not run because the automatic incident evaluation for this alert did not succeed.',
+  'no-catalog-groups': 'No catalog Group entities were available to suggest an owner from.',
+  'catalog-unavailable': 'The catalog could not be read when this alert was received, so no owner was suggested.',
+  'evaluation-capacity-reached': 'The per-process Jev capacity was full when this alert was received, so no owner was suggested.',
+  'alert-context-too-large': 'The alarm context alone exceeded the evaluation size budget, so no owner was suggested.',
+  'invalid-owner-request': 'The candidate list could not be fitted for this alert, so no owner was suggested.',
+  'jev-busy': 'Jev was busy when this alert was received, so no owner was suggested.',
+  'jev-error': 'The automatic owner suggestion call failed when this alert was received.',
+  'evaluation-pending': 'The automatic owner suggestion for this alert has not completed yet.',
+};
+
+/** A plain sentence explaining a `failed` or `not-evaluated` stored owner status. */
+function ownerStatusNote(notification: AwsAlertNotification, metadata: JevAwsAlertMetadata): string {
+  if (notification.ownerResultUnreadable) return 'The stored owner suggestion does not match the evaluation contract, so it is not shown.';
+  if (metadata.ownerErrorCode && ownerErrorMessages[metadata.ownerErrorCode]) return ownerErrorMessages[metadata.ownerErrorCode];
+  return metadata.ownerStatus === 'failed' ? 'Automatic owner suggestion failed for this alert.' : 'No automatic owner suggestion is stored on this alert.';
 }
 
-function ResultSummary({ label, result }: { label: string; result: EvaluationResult }) {
-  return <div className="jev-result" role="group" aria-label={label}>
-    <div className="jev-result-line"><strong>{label}</strong><span className="jev-pill">{result.model}</span></div>
-    {result.findings.map(finding => <div key={finding.id} style={{ marginTop: 10 }}>
-      <div className="jev-result-line"><span>{finding.title}</span><span className={statusClass(finding.status)}>{finding.status}</span></div>
-      <div className="jev-help">{String(finding.value)} · {finding.statement}</div>
-    </div>)}
+/**
+ * List-row chip: a stored owner suggestion is worth a glance only when its single
+ * finding is a confident `pass` naming a candidate. A `review` finding (low
+ * confidence, or the model chose "none") shows nothing in the row — the full
+ * picture, including the "needs review" state, is in the detail pane's
+ * "Suggested owner from receipt" section.
+ */
+function ownerChipLabel(metadata?: JevAwsAlertMetadata): string | undefined {
+  const findings = metadata?.ownerResult?.findings;
+  if (!findings || findings.length !== 1) return undefined;
+  const [finding] = findings;
+  if (finding.status !== 'pass' || !finding.candidate) return undefined;
+  const title = finding.candidate.title;
+  return typeof title === 'string' && title.trim() ? `Owner: ${title}` : undefined;
+}
+
+
+const impactGroups = [
+  { id: 'widespread', label: 'Widespread impact' },
+  { id: 'degraded', label: 'Degraded service' },
+  { id: 'limited', label: 'Limited impact' },
+  { id: 'unknown', label: 'Impact not established' },
+  { id: 'unassessed', label: 'Not assessed by Jev' },
+  { id: 'recovered', label: 'Recovered' },
+] as const;
+type GroupId = typeof impactGroups[number]['id'];
+
+/** Jev's reading of an alert: the freshest result wins, and AWS recovery overrides both. */
+export function categorizeAlert(notification: AwsAlertNotification, recheck?: EvaluationResult): { group: GroupId; area?: string } {
+  const result = recheck ?? notification.metadata?.result;
+  const value = (id: string) => { const found = result?.findings.find(finding => finding.id === id)?.value; return typeof found === 'string' ? found : undefined; };
+  const area = value('area');
+  if (notification.metadata?.awsState === 'OK') return { group: 'recovered', area };
+  const impact = value('impact');
+  return { group: impactGroups.some(group => group.id === impact) ? impact as GroupId : 'unassessed', area: area === 'unknown' ? undefined : area };
+}
+
+const useStyles = makeStyles(theme => ({
+  cardHeader: {
+    flexWrap: 'wrap',
+    gap: theme.spacing(1),
+    '& .MuiCardHeader-content': { minWidth: 200, overflowWrap: 'anywhere' },
+    '& .MuiCardHeader-action': { marginLeft: 0, marginTop: 0, alignSelf: 'center' },
+  },
+  dot: { width: 10, height: 10, borderRadius: '50%', flex: 'none', alignSelf: 'flex-start', margin: theme.spacing(1.5, 1.5, 0, 0), background: theme.palette.text.disabled },
+  ALARM: { background: theme.palette.error.main },
+  OK: { background: theme.palette.success.main },
+  INSUFFICIENT_DATA: { background: theme.palette.warning.main },
+  list: { padding: 0 },
+  subheader: { background: theme.palette.background.paper, lineHeight: '36px', display: 'flex', justifyContent: 'space-between' },
+  chips: { display: 'flex', gap: theme.spacing(0.5), flexWrap: 'wrap', marginTop: theme.spacing(0.5) },
+  meta: { display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr)', gap: theme.spacing(0.5, 2), margin: 0, '& dd': { margin: 0, overflowWrap: 'anywhere' } },
+  section: { marginTop: theme.spacing(3), '&:first-child': { marginTop: 0 } },
+  actions: { display: 'flex', gap: theme.spacing(1), flexWrap: 'wrap', alignItems: 'center', marginTop: theme.spacing(2) },
+  empty: { border: `1px dashed ${theme.palette.divider}`, borderRadius: theme.shape.borderRadius, padding: theme.spacing(3), textAlign: 'center' },
+  pager: { display: 'flex', gap: theme.spacing(1), alignItems: 'center', justifyContent: 'flex-end', padding: theme.spacing(1, 2) },
+}));
+
+function ResultSection({ label, result, candidates, renderCandidateLink, note }: { label: string; result: EvaluationResult; candidates?: Pick<Candidate, 'id' | 'title'>[]; renderCandidateLink?: (candidate: Candidate) => ReactNode; note?: string }) {
+  const classes = useStyles();
+  return <div className={classes.section} role="group" aria-label={label}>
+    <Box display="flex" justifyContent="space-between" alignItems="baseline" flexWrap="wrap" mb={1}>
+      <Typography variant="subtitle2">{label}</Typography>
+      <Typography variant="caption" color="textSecondary">{result.mode === 'demo' ? 'ILLUSTRATIVE RESULT' : result.model} · {instantLabel(result.evaluatedAt)}{note ? ` · ${note}` : ''}</Typography>
+    </Box>
+    <FindingList findings={result.findings} candidates={candidates} renderCandidateLink={renderCandidateLink} headingLevel="h4" />
   </div>;
 }
 
-export function AlertInbox({ loadNotifications, evaluate }: AlertInboxProps) {
+const triageQuestions = ['Reported impact', 'Investigation area'];
+
+/**
+ * A report that never became an alarm (a customer message, a chat thread) is triaged
+ * with the same questions as an alert, and read the same way. Live is the same preference
+ * as the rest of the inbox, so toggling it here or elsewhere updates both.
+ */
+function ReportTriage({ evaluate, liveDelayMs, live, setLive, forcedOff = false, active = true }: { evaluate: AlertInboxProps['evaluate']; liveDelayMs?: number; live: boolean; setLive: (value: boolean) => void; forcedOff?: boolean; active?: boolean }) {
+  const [text, setText] = useState('');
+  const check = useLiveEvaluation({ evaluate, workflow: 'incident', text, candidates: NO_CANDIDATES, live, delayMs: liveDelayMs, paused: !active });
+  const label = check.busy ? 'Assessing…'
+    : check.pending && check.retryAt ? 'Retrying automatically after a failure — or choose Check now'
+    : check.pending ? 'Waiting for you to pause…'
+    : check.stale ? 'Out of date'
+    : check.result ? 'Up to date'
+    : !live ? 'Live check is off — choose Check now, or turn on Live to check as you type'
+    : check.blocker || 'Assessed as you type';
+  return <Card component="article" aria-label="Report triage">
+    <CardHeader title="Triage a report" subheader="Paste symptoms, customer impact, and known facts. Jev reads it the way it reads an alarm." titleTypographyProps={{ variant: 'h5', component: 'h3' }}
+      action={<LiveSwitch live={live} onChange={setLive} forcedOff={forcedOff} style={{ margin: '8px 8px 0 0' }} />} />
+    <Divider />
+    <CardContent>
+      <TextField id="jev-report" label="Report" variant="outlined" fullWidth multiline minRows={5} maxRows={16} value={text} error={check.overLimit} onChange={event => setText(event.target.value)} />
+      <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" mt={1} mb={2} style={{ gap: 8 }}>
+        <Typography variant="body2" color="textSecondary" role="status">{label}</Typography>
+        <Box display="flex" alignItems="center" style={{ gap: 8 }}>
+          {check.result && <FindingCounts findings={check.result.findings} />}
+          <Button variant={live ? 'outlined' : 'contained'} color="primary" size="small" disabled={check.busy || check.overLimit} onClick={check.checkNow}>{check.busy ? 'Checking…' : 'Check now'}</Button>
+        </Box>
+      </Box>
+      {check.error && <Alert severity="error" style={{ marginBottom: 16 }}>{check.error}</Alert>}
+      {check.result ? <FindingList findings={check.result.findings} stale={check.stale} headingLevel="h4" /> : <PendingChecks titles={triageQuestions} busy={check.busy} headingLevel="h4" />}
+      <Typography variant="caption" color="textSecondary" component="p" style={{ marginTop: 16 }}>This assessment is not stored and creates no alert. Sending it shares the report with TypeSafe through your Backstage backend.</Typography>
+    </CardContent>
+  </Card>;
+}
+
+/**
+ * Alerts arrive on their own: the list refreshes in the background and is grouped by the
+ * impact Jev read from each alarm, so the reader starts from the worst one, not the newest.
+ */
+export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCandidateLink, pollMs = 30000, autoCheck = true, liveDelayMs, active = true, live: liveProp }: AlertInboxProps) {
+  const classes = useStyles();
   const limit = 20;
   const [offset, setOffset] = useState(0);
   const [notifications, setNotifications] = useState<AwsAlertNotification[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [skipped, setSkipped] = useState(0);
   const [selectedId, setSelectedId] = useState('');
+  // The alert the reader explicitly clicked, as opposed to one selected automatically; only
+  // that click may trigger an unrequested evaluate call (see `needsAssessment` below).
+  const [pickedId, setPickedId] = useState('');
+  const [staleSelected, setStaleSelected] = useState<AwsAlertNotification>();
   const [rechecks, setRechecks] = useState<Record<string, EvaluationResult>>({});
   const [recheckErrors, setRecheckErrors] = useState<Record<string, string>>({});
+  const [owners, setOwners] = useState<Record<string, { result: EvaluationResult; candidates: Candidate[] }>>({});
+  const [ownerErrors, setOwnerErrors] = useState<Record<string, string>>({});
   const [checkingId, setCheckingId] = useState('');
+  const [owningId, setOwningId] = useState('');
   const [loading, setLoading] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
   const [error, setError] = useState('');
+  const [pollFailed, setPollFailed] = useState(false);
+  const [lastLoaded, setLastLoaded] = useState<Date>();
+  const [arrived, setArrived] = useState<Set<string>>(new Set());
+  const [hideRecovered, setHideRecovered] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [preference, setLive] = useLivePreference();
+  const forcedOff = liveProp === false;
+  const live = liveProp !== false && preference;
   // Manual results belong to the list that is on screen; a reload invalidates them.
   const listGeneration = useRef(0);
+  const known = useRef<Set<string>>();
+  // Latest notifications/selection, read from callbacks that must not depend on every render.
+  const notificationsRef = useRef<AwsAlertNotification[]>([]);
+  notificationsRef.current = notifications;
+  const selectedIdRef = useRef('');
+  selectedIdRef.current = selectedId;
+  // An alert is auto-assessed at most once per mount, checked and recorded before the call
+  // starts so a reload, paging back, or a StrictMode double effect can never repeat it.
+  const autoAssessedRef = useRef<Set<string>>(new Set());
+  // A manual re-check or owner suggestion in flight; aborted (silently) on unmount or when a
+  // reload/paging bumps `listGeneration`, since its result would belong to a list already gone.
+  const recheckControllerRef = useRef<AbortController>();
+  const ownerControllerRef = useRef<AbortController>();
+  useEffect(() => () => { recheckControllerRef.current?.abort(); ownerControllerRef.current?.abort(); }, []);
+  // Stops background polling once the optional AWS module has proven unavailable, until a
+  // later successful load proves it is back. A ref is read synchronously inside the poll
+  // interval's closure; `availabilityGen` exists only so a flip of that ref can restart the
+  // (by then cleared) interval, since a ref alone cannot re-run an effect.
+  const unavailableRef = useRef(false);
+  const [availabilityGen, setAvailabilityGen] = useState(0);
+  function setUnavailable(value: boolean) {
+    if (unavailableRef.current === value) return;
+    unavailableRef.current = value;
+    setAvailabilityGen(current => current + 1);
+  }
+
+  function accept(page: AlertNotificationPage, background: boolean) {
+    const ids = page.notifications.map(notification => notification.id);
+    // Only a background refresh can reveal an arrival; the first load and paging are not news.
+    if (background && known.current) { const before = known.current; setArrived(current => new Set([...current, ...ids.filter(id => !before.has(id))])); }
+    known.current = new Set([...(background ? known.current ?? [] : []), ...ids]);
+    setNotifications(page.notifications);
+    setTotalCount(page.totalCount);
+    setSkipped(page.skipped);
+    setLastLoaded(new Date());
+    if (background) {
+      // A background refresh must never move the reader: keep the selection, and if it fell
+      // off this page, keep showing the notification object itself with an explanatory caption.
+      const current = selectedIdRef.current;
+      if (!current) {
+        // Nothing was selected — most likely the first load failed and left the inbox empty.
+        // A recovering background poll is the reader's only route back into the list, so it
+        // seeds the selection instead of leaving them stuck with nothing to look at.
+        setSelectedId(page.notifications[0]?.id ?? '');
+        setStaleSelected(undefined);
+      } else if (page.notifications.some(notification => notification.id === current)) setStaleSelected(undefined);
+      else { const previous = notificationsRef.current.find(notification => notification.id === current); if (previous) setStaleSelected(previous); }
+    } else {
+      setStaleSelected(undefined);
+      setSelectedId(current => page.notifications.some(notification => notification.id === current) ? current : page.notifications[0]?.id ?? '');
+    }
+  }
 
   useEffect(() => {
-    let active = true;
-    const generation = ++listGeneration.current;
+    let mounted = true;
+    ++listGeneration.current;
+    // This reload invalidates any manual result still in flight for the previous list.
+    recheckControllerRef.current?.abort();
+    ownerControllerRef.current?.abort();
     setLoading(true);
     setError('');
+    setPollFailed(false);
     setRechecks({});
     setRecheckErrors({});
+    setOwners({});
+    setOwnerErrors({});
     setCheckingId('');
+    setOwningId('');
+    setArrived(new Set());
     loadNotifications(offset, limit).then(page => {
-      if (!active) return;
-      setNotifications(page.notifications);
-      setTotalCount(page.totalCount);
-      setSkipped(page.skipped);
-      setSelectedId(current => page.notifications.some(notification => notification.id === current) ? current : page.notifications[0]?.id ?? '');
+      if (!mounted) return;
+      // A successful load — whether the first one or an explicit Refresh — proves the optional
+      // module is reachable again, so background polling (stopped below) may resume.
+      setUnavailable(false);
+      accept(page, false);
     }).catch(reason => {
-      if (!active) return;
+      if (!mounted) return;
+      if (reason instanceof Error && reason.name === 'AlertsUnavailableError') setUnavailable(true);
       setNotifications([]);
       setError(reason instanceof Error ? reason.message : 'AWS alerts could not be loaded.');
-    }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    }).finally(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
   }, [loadNotifications, offset, refreshToken]);
 
-  const selected = notifications.find(notification => notification.id === selectedId);
+  // Background refresh keeps the selection and any manual results: nothing the reader did is lost.
+  useEffect(() => {
+    if (!pollMs || !active) return undefined;
+    const timer = setInterval(() => {
+      // The optional module has proven unavailable: stop ticking instead of polling forever as
+      // a no-op. `availabilityGen` below restarts this effect (a fresh interval) once a
+      // successful explicit load proves the module is reachable again.
+      if (unavailableRef.current) { clearInterval(timer); return; }
+      if (document.visibilityState === 'hidden') return;
+      const generation = listGeneration.current;
+      loadNotifications(offset, limit).then(page => {
+        if (generation !== listGeneration.current) return;
+        accept(page, true); setPollFailed(false); setError('');
+      }).catch(reason => {
+        if (generation !== listGeneration.current) return;
+        if (reason instanceof Error && reason.name === 'AlertsUnavailableError') { setUnavailable(true); clearInterval(timer); }
+        setPollFailed(true);
+      });
+    }, pollMs);
+    return () => clearInterval(timer);
+  }, [loadNotifications, offset, pollMs, active, availabilityGen]);
+
+  const selected = notifications.find(notification => notification.id === selectedId) ?? (staleSelected?.id === selectedId ? staleSelected : undefined);
+  const showingStale = Boolean(selected) && !notifications.some(notification => notification.id === selected!.id);
   const received = notifications.length + skipped;
   const checking = Boolean(checkingId);
   const busy = loading || checking;
@@ -232,55 +510,166 @@ export function AlertInbox({ loadNotifications, evaluate }: AlertInboxProps) {
     }
     setCheckingId(id);
     setRecheckErrors(current => ({ ...current, [id]: '' }));
+    const controller = new AbortController();
+    recheckControllerRef.current = controller;
     try {
-      const result = await evaluate(request.data);
+      const result = await evaluate(request.data, { signal: controller.signal });
+      // The same contract as a stored result: an unreadable answer is reported, never rendered.
+      if (!isEvaluationResult(result)) throw new Error('Jev returned a result that does not match the evaluation contract.');
       if (generation === listGeneration.current) setRechecks(current => ({ ...current, [id]: result }));
     } catch (reason) {
+      if (controller.signal.aborted) return;
       if (generation === listGeneration.current) setRecheckErrors(current => ({ ...current, [id]: reason instanceof Error ? reason.message : 'Jev re-check failed.' }));
     } finally {
-      if (generation === listGeneration.current) setCheckingId('');
+      if (recheckControllerRef.current === controller) recheckControllerRef.current = undefined;
+      if (!controller.signal.aborted && generation === listGeneration.current) setCheckingId('');
     }
   }
 
-  return <main className="jev">
-    <style>{jevStyles}</style>
-    <section className="jev-alerts" aria-label="AWS alerts">
-      <div className="jev-panel">
-        <div className="jev-result-header"><div><h2>AWS alerts</h2><p>CloudWatch alerts delivered through Backstage Notifications.</p></div><button className="jev-secondary" disabled={busy} onClick={() => { if (offset === 0) setRefreshToken(value => value + 1); else setOffset(0); }}>{loading ? 'Refreshing…' : 'Refresh'}</button></div>
-        {error && <div className="jev-error" role="alert">{error}</div>}
-        {skipped > 0 && <div className="jev-banner" role="status">{skipped} row{skipped === 1 ? '' : 's'} could not be displayed because {skipped === 1 ? 'it was' : 'they were'} not readable AWS alert notifications.</div>}
-        {loading && !notifications.length ? <div className="jev-empty">Loading AWS alerts…</div> : !notifications.length ? <div className="jev-empty">No AWS alerts were returned.</div> : <div className="jev-grid" style={{ gridTemplateColumns: 'minmax(220px, .7fr) minmax(0, 1.3fr)' }}>
-          <div aria-label="AWS alert list">
-            {notifications.map(notification => <button key={notification.id} className="jev-alert" aria-pressed={notification.id === selectedId} onClick={() => setSelectedId(notification.id)}>
-              <div className="jev-result-line"><strong>{notification.title}</strong><span className="jev-pill">{notification.metadata ? notification.metadata.awsState : 'Details unavailable'}</span></div>
-              <div className="jev-help">{notification.created ? instantLabel(notification.created) : 'Received time not reported'} · {notification.metadata?.region || 'Region unknown'}</div>
-              <div className="jev-help">{notification.description || 'No reason supplied.'}</div>
-            </button>)}
-          </div>
-          {selected && <article className="jev-result" aria-label="AWS alert details">
-            <div className="jev-result-line"><h3>{selected.title}</h3>{selected.metadata ? <span className="jev-pill">AWS state: {selected.metadata.awsState}</span> : <span className="jev-pill">Details unavailable</span>}</div>
-            <p>{selected.description || 'No reason supplied.'}</p>
-            <dl>
-              <dt>Received</dt><dd>{selected.created ? <time dateTime={selected.created}>{instantLabel(selected.created)}</time> : 'Not reported'}{selected.updated ? <> · updated <time dateTime={selected.updated}>{instantLabel(selected.updated)}</time></> : null}</dd>
-              {selected.metadata && <><dt>Alarm ARN</dt><dd><code>{selected.metadata.alarmArn}</code></dd>
-              <dt>Region</dt><dd>{selected.metadata.region || 'Not reported'}</dd>
-              <dt>Jev status at receipt</dt><dd>{statusLabel(selected.metadata.evaluationStatus)}{selected.metadata.errorCode ? ` (${selected.metadata.errorCode})` : ''}{selected.detailsUpdated ? <> · recorded <time dateTime={selected.detailsUpdated}>{instantLabel(selected.detailsUpdated)}</time></> : null}</dd></>}
-            </dl>
-            {selected.metadata ? <>
-              <label className="jev-label" htmlFor="jev-alert-context">Context preview</label>
-              <textarea id="jev-alert-context" readOnly value={selected.metadata.context} />
-              {selected.metadata.result
-                ? <ResultSummary label="Stored Jev result from receipt" result={selected.metadata.result} />
-                : <p className="jev-status-message" role="status">{storedResultNote(selected, selected.metadata)}</p>}
-              {rechecks[selected.id] && <ResultSummary label="Manual Jev re-check (not stored)" result={rechecks[selected.id]} />}
-              {recheckErrors[selected.id] && <div className="jev-error" role="alert">{recheckErrors[selected.id]}</div>}
-              <div className="jev-actions"><button className="jev-primary" disabled={busy} onClick={recheck}>{checkingId === selected.id ? 'Re-checking…' : checking ? 'Another re-check is running…' : 'Re-check with Jev'}</button></div>
-              <p className="jev-help">AWS state and Jev's incident interpretation are separate signals. Re-checking previews this context and updates only this screen.</p>
-            </> : <p className="jev-status-message" role="status">{missingDetailsNote(selected)}</p>}
-          </article>}
-        </div>}
-        <div className="jev-actions"><button className="jev-secondary" disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>Previous</button><span className="jev-count">{received ? `${offset + 1}–${offset + received} of ${totalCount}` : `0 of ${totalCount}`}</span><button className="jev-secondary" disabled={busy || offset + limit >= totalCount} onClick={() => setOffset(offset + limit)}>Next</button></div>
-      </div>
-    </section>
-  </main>;
+  async function suggestOwner() {
+    if (!selected?.metadata || !loadOwners || owningId) return;
+    const { id, metadata } = selected;
+    const generation = listGeneration.current;
+    setOwningId(id);
+    setOwnerErrors(current => ({ ...current, [id]: '' }));
+    const controller = new AbortController();
+    ownerControllerRef.current = controller;
+    try {
+      const candidates = await loadOwners();
+      if (!candidates.length) throw new Error('The catalog returned no teams to choose from.');
+      const request = evaluationRequestSchema.safeParse({ workflow: 'ownership', text: metadata.context, candidates });
+      if (!request.success) throw new Error(`An owner cannot be suggested for this alert. ${request.error.issues.map(issue => issue.message).join(' ')}`);
+      const result = await evaluate(request.data, { signal: controller.signal });
+      if (!isEvaluationResult(result)) throw new Error('Jev returned a result that does not match the evaluation contract.');
+      if (generation === listGeneration.current) setOwners(current => ({ ...current, [id]: { result, candidates } }));
+    } catch (reason) {
+      if (controller.signal.aborted) return;
+      if (generation === listGeneration.current) setOwnerErrors(current => ({ ...current, [id]: reason instanceof Error ? reason.message : 'Owner suggestion failed.' }));
+    } finally {
+      if (ownerControllerRef.current === controller) ownerControllerRef.current = undefined;
+      if (!controller.signal.aborted && generation === listGeneration.current) setOwningId('');
+    }
+  }
+
+  // An active alarm that arrived without an assessment gets one as soon as it is opened, once —
+  // but only when the reader themselves opened it (see `pickedId`, decided at click time below):
+  // never for the alert that was selected automatically, and never because a refresh or reload
+  // changed the selection. `pickedId` itself already encodes whether Live, the report tool, and
+  // this view being on screen allowed a send at the moment of the click, and is cleared again the
+  // instant any of those flips to blocking — so the only deferral left here is waiting for an
+  // in-flight check or the list itself to finish loading.
+  const needsAssessment = Boolean(selectedId === pickedId && selected?.metadata && selected.metadata.awsState !== 'OK' && !selected.metadata.result && !rechecks[selected.id] && !(selected.id in recheckErrors) && !checking && !loading);
+  // The click that set `pickedId` only expressed intent for the conditions true at that instant;
+  // if any of them later flips to blocking, that intent no longer holds and must not fire late.
+  useEffect(() => {
+    if (!(autoCheck && live && active) || reporting) setPickedId('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoCheck, live, active, reporting]);
+  useEffect(() => {
+    if (!needsAssessment) return;
+    if (autoAssessedRef.current.has(selectedId)) return;
+    // Recorded before the call starts, synchronously, so nothing can race this guard.
+    autoAssessedRef.current.add(selectedId);
+    recheck();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsAssessment, selectedId]);
+
+  const categorized = notifications.map(notification => ({ notification, ...categorizeAlert(notification, rechecks[notification.id]) }));
+  const visible = categorized.filter(entry => !hideRecovered || entry.group !== 'recovered');
+
+  return <Grid container spacing={3} alignItems="flex-start" component="section" aria-label="AWS alerts">
+    <Grid item xs={12} md={5}>
+      <Card>
+        <CardHeader className={classes.cardHeader} title="AWS alerts" titleTypographyProps={{ variant: 'h5', component: 'h2' }}
+          subheader={pollFailed ? 'Background refresh failed; showing the last loaded list.' : lastLoaded ? `Grouped by Jev impact · last checked ${lastLoaded.toLocaleTimeString()}${pollMs ? ` · refreshes every ${Math.round(pollMs / 1000)}s` : ''}` : 'CloudWatch alerts delivered through Backstage Notifications.'}
+          action={<><Button size="small" color="primary" aria-pressed={reporting} style={{ margin: '8px 4px 0 0' }} onClick={() => setReporting(value => !value)}>Triage a report</Button><Button size="small" disabled={busy} style={{ margin: '8px 8px 0 0' }} onClick={() => { if (offset === 0) setRefreshToken(value => value + 1); else setOffset(0); }}>{loading ? 'Refreshing…' : 'Refresh'}</Button></>} />
+        <Divider />
+        {error && <Alert severity="error" style={{ margin: 16 }}>{error}</Alert>}
+        {skipped > 0 && <Alert severity="warning" role="status" style={{ margin: 16 }}>{skipped} row{skipped === 1 ? '' : 's'} could not be displayed because {skipped === 1 ? 'it was' : 'they were'} not readable AWS alert notifications.</Alert>}
+        {loading && !notifications.length ? <CardContent><div className={classes.empty}><Typography variant="body2" color="textSecondary">Loading AWS alerts…</Typography></div></CardContent>
+          : !notifications.length ? <CardContent><div className={classes.empty}><Typography variant="body2" color="textSecondary">No AWS alerts were returned.</Typography></div></CardContent>
+          : <>
+          <List className={classes.list} aria-label="AWS alert list">
+            {impactGroups.map(group => {
+              const entries = visible.filter(entry => entry.group === group.id);
+              if (!entries.length) return null;
+              return <li key={group.id}><ul style={{ padding: 0 }}>
+                <ListSubheader className={classes.subheader}><span>{group.label}</span><span>{entries.length}</span></ListSubheader>
+                {entries.map(({ notification, area }) => { const isSelected = !reporting && notification.id === selectedId; return <li key={notification.id}><ListItem button divider component="div" selected={isSelected} aria-current={isSelected ? 'true' : undefined} onClick={() => {
+                  setReporting(false); setSelectedId(notification.id);
+                  // Assessing this click's intent now, not later: `reporting` is excluded because
+                  // this same click is setting it false, so it cannot itself block this click.
+                  setPickedId(autoCheck && live && active ? notification.id : '');
+                  setStaleSelected(undefined); setArrived(current => { const next = new Set(current); next.delete(notification.id); return next; });
+                }}>
+                  <span className={`${classes.dot} ${notification.metadata ? classes[notification.metadata.awsState] : ''}`} aria-hidden />
+                  <ListItemText disableTypography
+                    primary={<Typography variant="subtitle2" noWrap>{notification.title}</Typography>}
+                    secondary={<>
+                      <Typography variant="caption" color="textSecondary" component="div">{notification.metadata ? notification.metadata.awsState : 'Details unavailable'} · {notification.created ? instantLabel(notification.created) : 'Received time not reported'} · {notification.metadata?.region || 'Region unknown'}</Typography>
+                      <Typography variant="caption" color="textSecondary" component="div" noWrap>{notification.description || 'No reason supplied.'}</Typography>
+                      {(area || arrived.has(notification.id) || checkingId === notification.id || ownerChipLabel(notification.metadata)) && <div className={classes.chips}>
+                        {arrived.has(notification.id) && <Chip size="small" color="primary" label="New" />}
+                        {area && <Chip size="small" variant="outlined" label={`Look at: ${area}`} />}
+                        {ownerChipLabel(notification.metadata) && <Chip size="small" variant="outlined" label={ownerChipLabel(notification.metadata)} />}
+                        {checkingId === notification.id && <Chip size="small" variant="outlined" label="Assessing…" />}
+                      </div>}
+                    </>} />
+                </ListItem></li>; })}
+              </ul></li>;
+            })}
+          </List>
+          {!visible.length && <CardContent><Typography variant="body2" color="textSecondary">Every alert on this page has recovered.</Typography></CardContent>}
+          </>}
+        <div className={classes.pager}>
+          <FormControlLabel style={{ marginRight: 'auto' }} label={<Typography variant="caption">Hide recovered</Typography>} control={<Switch size="small" color="primary" checked={hideRecovered} onChange={event => setHideRecovered(event.target.checked)} />} />
+          <Button size="small" disabled={busy || offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>Previous</Button>
+          <Typography variant="caption" color="textSecondary">{received ? `${offset + 1}–${offset + received} of ${totalCount}` : `0 of ${totalCount}`}</Typography>
+          <Button size="small" disabled={busy || offset + limit >= totalCount} onClick={() => setOffset(offset + limit)}>Next</Button>
+        </div>
+      </Card>
+    </Grid>
+    <Grid item xs={12} md={7}>
+      {/* Kept mounted so a half-written report survives a look at an alert; paused while hidden or the inbox itself is not on screen. */}
+      <div hidden={!reporting}><ReportTriage evaluate={evaluate} liveDelayMs={liveDelayMs} live={live} setLive={setLive} forcedOff={forcedOff} active={active && reporting} /></div>
+      {reporting ? null : selected ? <Card component="article" aria-label="AWS alert details">
+        <CardHeader className={classes.cardHeader} title={selected.title} subheader={selected.description || 'No reason supplied.'} titleTypographyProps={{ variant: 'h5', component: 'h3' }}
+          action={<Chip size="small" variant="outlined" style={{ margin: '12px 8px 0 0' }} label={selected.metadata ? `AWS state: ${selected.metadata.awsState}` : 'Details unavailable'} />} />
+        <Divider />
+        <CardContent>
+          {showingStale && <Typography variant="caption" color="textSecondary" role="status" component="p" style={{ marginBottom: 16 }}>This alert is no longer on this page of the inbox.</Typography>}
+          {selected.metadata ? <>
+            {rechecks[selected.id] && <ResultSection label="Manual Jev re-check (not stored)" result={rechecks[selected.id]} />}
+            {selected.metadata.result
+              ? <ResultSection label="Stored Jev result from receipt" result={selected.metadata.result} />
+              : <>
+                  <Typography variant="body2" color="textSecondary">{storedResultNote(selected, selected.metadata)}</Typography>
+                  {!live && <Typography variant="body2" color="textSecondary">Choose Re-check with Jev to assess it now.</Typography>}
+                </>}
+            {selected.metadata.ownerResult
+              ? <ResultSection label="Suggested owner from receipt" result={selected.metadata.ownerResult} candidates={selected.metadata.ownerCandidates} renderCandidateLink={renderCandidateLink} note={selected.metadata.ownerShortened ? 'shortened team descriptions were used' : undefined} />
+              : (selected.metadata.ownerStatus || selected.ownerResultUnreadable) && <Typography variant="body2" color="textSecondary">{ownerStatusNote(selected, selected.metadata)}</Typography>}
+            {recheckErrors[selected.id] && <Alert severity="error" style={{ marginTop: 16 }}>{recheckErrors[selected.id]}</Alert>}
+            {owners[selected.id] && <ResultSection label="Suggested owner (not stored)" result={owners[selected.id].result} candidates={owners[selected.id].candidates} renderCandidateLink={renderCandidateLink} />}
+            {ownerErrors[selected.id] && <Alert severity="error" style={{ marginTop: 16 }}>{ownerErrors[selected.id]}</Alert>}
+            <div className={classes.actions}>
+              <Button variant="contained" color="primary" size="small" disabled={busy} onClick={recheck}>{checkingId === selected.id ? 'Re-checking…' : checking ? 'Another re-check is running…' : 'Re-check with Jev'}</Button>
+              {loadOwners && <Button variant="outlined" size="small" disabled={Boolean(owningId) || loading} onClick={suggestOwner}>{owningId === selected.id ? 'Finding a team…' : selected.metadata.ownerResult ? 'Re-suggest owning team' : 'Suggest owning team'}</Button>}
+            </div>
+            <Typography variant="caption" color="textSecondary" component="p" style={{ marginTop: 8 }}>AWS state and Jev's incident interpretation are separate signals. Re-checking previews this context and updates only this screen.</Typography>
+            <div className={classes.section}>
+              <TextField id="jev-alert-context" label="Context preview" variant="outlined" fullWidth multiline maxRows={8} value={selected.metadata.context} InputProps={{ readOnly: true }} />
+            </div>
+          </> : <Typography variant="body2" color="textSecondary">{missingDetailsNote(selected)}</Typography>}
+          <Divider style={{ margin: '24px 0 16px' }} />
+          <Typography variant="caption" color="textSecondary" component="dl" className={classes.meta}>
+            <dt>Received</dt><dd>{selected.created ? <time dateTime={selected.created}>{instantLabel(selected.created)}</time> : 'Not reported'}{selected.updated ? <> · updated <time dateTime={selected.updated}>{instantLabel(selected.updated)}</time></> : null}</dd>
+            {selected.metadata && <><dt>Alarm ARN</dt><dd><code>{selected.metadata.alarmArn}</code></dd>
+            <dt>Region</dt><dd>{selected.metadata.region || 'Not reported'}</dd>
+            <dt>Jev status at receipt</dt><dd>{statusLabel(selected.metadata.evaluationStatus)}{selected.metadata.errorCode ? ` (${selected.metadata.errorCode})` : ''}{selected.detailsUpdated ? <> · recorded <time dateTime={selected.detailsUpdated}>{instantLabel(selected.detailsUpdated)}</time></> : null}</dd></>}
+          </Typography>
+        </CardContent>
+      </Card> : null}
+    </Grid>
+  </Grid>;
 }

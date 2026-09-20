@@ -11,6 +11,21 @@ export interface Config {
       model?: string;
       /** Jev request deadline in milliseconds. @visibility backend */
       timeoutMs?: number;
+      /**
+       * Optional owner suggestion made at alarm receipt, alongside incident triage.
+       * Off by default: it doubles Jev provider calls per active alarm (one for
+       * incident triage, one for the owner suggestion) and sends catalog Group
+       * titles, descriptions, and tags to the Jev provider as candidate context.
+       * @visibility backend
+       */
+      ownerSuggestion?: {
+        /** Enables the owner suggestion call. @visibility backend */
+        enabled?: boolean;
+        /** Maximum catalog Group entities loaded as candidates, 1-20. @visibility backend */
+        maxGroups?: number;
+        /** Seconds the loaded catalog Group list is cached in memory, 30-3600. @visibility backend */
+        cacheSeconds?: number;
+      };
     };
   };
 }

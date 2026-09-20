@@ -1,15 +1,23 @@
-import { coreServices, createBackendModule, type LoggerService } from '@backstage/backend-plugin-api';
+import { coreServices, createBackendModule, type AuthService, type LoggerService } from '@backstage/backend-plugin-api';
 import type { Config, JsonValue } from '@backstage/config';
 import { parseEntityRef, stringifyEntityRef } from '@backstage/catalog-model';
+import { CatalogClient } from '@backstage/catalog-client';
 import { eventsServiceRef, type EventParams } from '@backstage/plugin-events-node';
 import { notificationService, type NotificationSendOptions } from '@backstage/plugin-notifications-node';
 import { z } from 'zod';
 import {
+  awsAlertOwnerErrorCodes,
   buildEvaluation,
+  candidateSchema,
+  catalogCandidateOrderFields,
+  entityToCandidate,
   evaluationRequestByteLength,
   evaluationRequestSchema,
+  fitCandidatesToBudget,
   summarize,
   MAX_EVALUATION_BYTES,
+  type AwsAlertOwnerErrorCode,
+  type Candidate,
   type EvaluationResult,
   type JevRequest,
   type JevResponse,
@@ -52,6 +60,18 @@ type SnsEnvelope = z.infer<typeof snsNotificationSchema>;
 type CloudWatchAlarm = z.infer<typeof cloudWatchAlarmSchema>;
 type Evaluate = (request: JevRequest, signal?: AbortSignal) => Promise<JevResponse>;
 
+/**
+ * Owner suggestion is a second, independent Jev call made only for an active
+ * (`ALARM`) alert whose incident evaluation succeeded. It is off by default: it
+ * doubles provider calls per active alarm and sends catalog Group descriptions to
+ * the provider as candidate context.
+ */
+export type OwnerSuggestionSettings = Readonly<{
+  enabled: boolean;
+  maxGroups: number;
+  cacheSeconds: number;
+}>;
+
 export type AwsAlertSettings = Readonly<{
   eventTopic: string;
   allowedTopicArns: string[];
@@ -62,6 +82,7 @@ export type AwsAlertSettings = Readonly<{
   confidenceThreshold: number;
   /** Root `jevOperationsSupport.demoMode`; automatic evaluation is disabled while it is on. */
   demoMode: boolean;
+  ownerSuggestion: OwnerSuggestionSettings;
 }>;
 
 export type AwsAlertEvaluationStatus = 'evaluated' | 'failed' | 'not-evaluated';
@@ -75,16 +96,40 @@ export type AwsAlertNotEvaluatedReason =
   | 'alert-context-too-large'
   | 'invalid-alert-context';
 
+export type AwsAlertOwnerStatus = 'evaluated' | 'failed' | 'not-evaluated';
+
+/**
+ * Every code the owner suggestion can be stored with. Defined in the common package
+ * (`awsAlertOwnerErrorCodes`) and re-exported here for compatibility, so the frontend
+ * can import it without reaching into this backend-only package's source (knex,
+ * express, ...) from a jsdom test.
+ */
+export { awsAlertOwnerErrorCodes, type AwsAlertOwnerErrorCode };
+
+/** Loads up to `maxGroups` catalog Group candidates; the real implementation caches and single-flights this. */
+export type LoadOwnerGroups = () => Promise<Candidate[]>;
+
 export type AwsAlertBuildOptions = {
   evaluate?: Evaluate;
   /** Recorded when this build intentionally does not call Jev. */
   notEvaluatedReason?: AwsAlertNotEvaluatedReason;
+  /** Supplies catalog Group candidates for the owner suggestion call, when enabled. */
+  loadGroups?: LoadOwnerGroups;
+  /** Reads the currently stored details for a scope, when available (used to preserve a
+   * previously evaluated owner suggestion across a redelivered alarm; see `evaluateAlarm`). */
+  readDetails?: (scope: string) => Promise<JevAwsAlertDetails | undefined>;
 };
 
 /**
  * The structured alert context kept in this module's own table. The standard
  * Notifications backend stores only its own payload fields and discards
  * `payload.metadata`, so this detail cannot live on the notification itself.
+ *
+ * `ownerStatus`/`ownerResult`/`ownerErrorCode` are present only when
+ * `ownerSuggestion.enabled` is configured and the alarm is currently `ALARM`; a
+ * disabled install, an unconfigured install, or a resolved/insufficient-data alarm
+ * omits all three so its stored rows are indistinguishable from before this
+ * feature existed.
  */
 export type JevAwsAlertDetails = {
   source: 'aws-cloudwatch';
@@ -95,6 +140,14 @@ export type JevAwsAlertDetails = {
   evaluationStatus: AwsAlertEvaluationStatus;
   result?: JsonValue;
   errorCode?: string;
+  ownerStatus?: AwsAlertOwnerStatus;
+  ownerResult?: JsonValue;
+  /** The shortlist actually sent (titles only), so the frontend can label runner-up
+   * candidates in the result's probability breakdown instead of showing raw `c0`/`c1` keys. */
+  ownerCandidates?: { id: string; title: string }[];
+  /** Set when `fitCandidatesToBudget` shortened descriptions or dropped candidates to fit. */
+  ownerShortened?: boolean;
+  ownerErrorCode?: string;
   snsMessageId: string;
   topicArn: string;
 };
@@ -112,8 +165,9 @@ function requiredString(config: Config, key: string): string {
   return value;
 }
 
-function boundedInteger(config: Config, key: string, fallback: number, min: number, max: number): number {
-  const value = config.getOptionalNumber(key) ?? fallback;
+/** `config` may be absent entirely: an unset `ownerSuggestion` section still gets its defaults. */
+function boundedInteger(config: Config | undefined, key: string, fallback: number, min: number, max: number): number {
+  const value = config?.getOptionalNumber(key) ?? fallback;
   if (!Number.isInteger(value) || value < min || value > max) {
     throw new Error(`jevOperationsSupport.awsNotifications.${key} must be an integer between ${min} and ${max}`);
   }
@@ -149,6 +203,13 @@ export function readAwsAlertSettings(config: Config): AwsAlertSettings | undefin
     throw new Error('jevOperationsSupport.confidenceThreshold must be between 0 and 1');
   }
 
+  const ownerSuggestionSection = section.getOptionalConfig('ownerSuggestion');
+  const ownerSuggestion: OwnerSuggestionSettings = {
+    enabled: ownerSuggestionSection?.getOptionalBoolean('enabled') ?? false,
+    maxGroups: boundedInteger(ownerSuggestionSection, 'maxGroups', 20, 1, 20),
+    cacheSeconds: boundedInteger(ownerSuggestionSection, 'cacheSeconds', 300, 30, 3_600),
+  };
+
   return {
     eventTopic,
     allowedTopicArns: [...new Set(allowedTopicArns.map(arn => arn.trim()))],
@@ -157,6 +218,7 @@ export function readAwsAlertSettings(config: Config): AwsAlertSettings | undefin
     timeoutMs: boundedInteger(section, 'timeoutMs', config.getOptionalNumber('jevOperationsSupport.timeoutMs') ?? 15_000, 1_000, 60_000),
     confidenceThreshold,
     demoMode: config.getOptionalBoolean('jevOperationsSupport.demoMode') ?? false,
+    ownerSuggestion,
   };
 }
 
@@ -217,28 +279,144 @@ function serializableResult(result: EvaluationResult): JsonValue {
   return JSON.parse(JSON.stringify(result)) as JsonValue;
 }
 
-type AlarmEvaluation = { status: AwsAlertEvaluationStatus; result?: JsonValue; errorCode?: string; context: string };
+type IncidentEvaluation = { status: AwsAlertEvaluationStatus; result?: JsonValue; errorCode?: string };
+type OwnerEvaluation = {
+  status: AwsAlertOwnerStatus;
+  result?: JsonValue;
+  errorCode?: AwsAlertOwnerErrorCode;
+  candidates?: { id: string; title: string }[];
+  shortened?: boolean;
+};
+type AlarmEvaluation = IncidentEvaluation & { context: string; owner?: OwnerEvaluation };
 
-async function evaluateAlarm(alarm: CloudWatchAlarm, settings: AwsAlertSettings, options: AwsAlertBuildOptions): Promise<AlarmEvaluation> {
-  const context = alarmContext(alarm);
+async function evaluateIncident(context: string, settings: AwsAlertSettings, options: AwsAlertBuildOptions): Promise<IncidentEvaluation> {
   const input = { workflow: 'incident' as const, text: context, candidates: [] };
   const parsed = evaluationRequestSchema.safeParse(input);
   if (!parsed.success) {
     // The alert stays visible; only the provider call is refused, with an explicit reason.
     const oversized = context.length > 16_000 || evaluationRequestByteLength(input) > MAX_EVALUATION_BYTES;
-    return { status: 'not-evaluated', errorCode: oversized ? 'alert-context-too-large' : 'invalid-alert-context', context };
+    return { status: 'not-evaluated', errorCode: oversized ? 'alert-context-too-large' : 'invalid-alert-context' };
   }
-  if (!options.evaluate) return { status: 'not-evaluated', errorCode: options.notEvaluatedReason ?? 'jev-not-configured', context };
+  if (!options.evaluate) return { status: 'not-evaluated', errorCode: options.notEvaluatedReason ?? 'jev-not-configured' };
 
   const { request, checks } = buildEvaluation(parsed.data);
   try {
     const response = await options.evaluate(request);
     const result = summarize(parsed.data, response, checks, settings.confidenceThreshold);
-    return { status: 'evaluated', result: serializableResult(result), context };
+    return { status: 'evaluated', result: serializableResult(result) };
   } catch (error) {
     const errorCode = error instanceof ProviderError && error.status === 503 ? 'jev-busy' : 'jev-error';
-    return { status: 'failed', errorCode, context };
+    return { status: 'failed', errorCode };
   }
+}
+
+/**
+ * A second Jev call using catalog Group candidates instead of the empty candidate
+ * list incident triage uses. It only ever runs for an alarm that is currently
+ * `ALARM` and whose incident evaluation already succeeded (both checked by the
+ * caller, `evaluateAlarm`, which skips this function entirely otherwise so a
+ * resolved alarm or an alarm the incident call could not evaluate carries no
+ * owner fields at all): a suggestion is not useful for a resolved alarm, and
+ * there is no reliable context to suggest an owner from when incident triage
+ * itself could not run.
+ *
+ * Deliberately shares the capacity slot the caller already holds for incident
+ * evaluation rather than claiming a second one of its own: incident and owner
+ * evaluation for one alarm are one logical unit of work, not two independent
+ * ones competing for the shared pool.
+ *
+ * Every branch below returns a `not-evaluated` or `failed` status instead of
+ * throwing: a failure here must never fail or delay the notification (which is
+ * already saved by the time this runs) or the stored incident result.
+ */
+async function evaluateOwner(
+  settings: AwsAlertSettings,
+  context: string,
+  incidentStatus: AwsAlertEvaluationStatus,
+  options: AwsAlertBuildOptions,
+): Promise<OwnerEvaluation> {
+  if (!options.evaluate) {
+    // Mirrors exactly how incident triage reports "no evaluator" for this installation:
+    // demo mode, a missing API key, or exhausted capacity disable both calls for the
+    // same reason (the capacity case is why `evaluation-capacity-reached` and
+    // `evaluation-pending` are in `awsAlertOwnerErrorCodes` despite the owner call
+    // never acquiring a capacity slot of its own).
+    // `notEvaluatedReason` is only ever set here to one of the installation/capacity
+    // reasons below (never `invalid-alert-context`/incident's own `alert-context-too-large`,
+    // which are produced only inside `evaluateIncident` itself), so this narrowing holds.
+    return { status: 'not-evaluated', errorCode: (options.notEvaluatedReason as AwsAlertOwnerErrorCode | undefined) ?? 'jev-not-configured' };
+  }
+  if (incidentStatus !== 'evaluated') return { status: 'not-evaluated', errorCode: 'incident-not-evaluated' };
+
+  let groups: Candidate[];
+  try {
+    groups = options.loadGroups ? await options.loadGroups() : [];
+  } catch {
+    return { status: 'not-evaluated', errorCode: 'catalog-unavailable' };
+  }
+  if (groups.length === 0) return { status: 'not-evaluated', errorCode: 'no-catalog-groups' };
+
+  // Shrink or drop candidates to fit the shared byte budget rather than failing on size
+  // outright: `alert-context-too-large` is reserved for when the alarm context alone
+  // (candidates aside) cannot fit, which cannot happen here because incident triage
+  // already evaluated this same context with an empty candidate list.
+  const fitted = fitCandidatesToBudget({ workflow: 'ownership', text: context, candidates: groups });
+  const input = { workflow: 'ownership' as const, text: context, candidates: fitted.candidates };
+  const parsed = evaluationRequestSchema.safeParse(input);
+  if (!parsed.success) {
+    const oversized = context.length > 16_000 || evaluationRequestByteLength({ workflow: 'ownership', text: context, candidates: [] }) > MAX_EVALUATION_BYTES;
+    // Not oversized: fitting shrank candidates down to none (or the schema's own
+    // "needs at least one candidate" rule for the `ownership` workflow), which is a
+    // different, milder failure than the alarm context itself being too large.
+    return { status: 'not-evaluated', errorCode: oversized ? 'alert-context-too-large' : 'invalid-owner-request' };
+  }
+
+  try {
+    const { request, checks } = buildEvaluation(parsed.data);
+    const response = await options.evaluate(request);
+    const result = summarize(parsed.data, response, checks, settings.confidenceThreshold);
+    return {
+      status: 'evaluated',
+      result: serializableResult(result),
+      // Titles only, for the frontend to label runner-up candidates in the probability
+      // breakdown; never the full descriptions, which are not needed again once Jev
+      // has already answered and would otherwise duplicate the sent candidate text at rest.
+      candidates: fitted.candidates.map(candidate => ({ id: candidate.id, title: candidate.title })),
+      shortened: fitted.shortened || fitted.dropped > 0,
+    };
+  } catch (error) {
+    const errorCode = error instanceof ProviderError && error.status === 503 ? 'jev-busy' : 'jev-error';
+    return { status: 'failed', errorCode };
+  }
+}
+
+/**
+ * Evaluates incident triage, then (when applicable) the owner suggestion. `onIncidentEvaluated`,
+ * when given, runs after incident triage completes but before the (potentially slow: catalog
+ * read plus a second provider call) owner call starts — the caller uses it to publish the
+ * incident result early, so a reader is not left waiting up to the owner path's own latency
+ * budget to see triage that already finished. `willRunOwnerCall` tells that callback whether an
+ * owner call is actually about to run (enabled, `ALARM`, and incident evaluated) — the same
+ * condition `evaluateOwner` below is reached under, computed once here rather than twice.
+ */
+async function evaluateAlarm(
+  alarm: CloudWatchAlarm,
+  settings: AwsAlertSettings,
+  options: AwsAlertBuildOptions,
+  onIncidentEvaluated?: (incident: IncidentEvaluation, context: string, willRunOwnerCall: boolean) => void | Promise<void>,
+): Promise<AlarmEvaluation> {
+  const context = alarmContext(alarm);
+  const incident = await evaluateIncident(context, settings, options);
+  // Disabled installs and a resolved/insufficient-data alarm must not carry any owner
+  // field at all, so old rows, disabled installs, and non-ALARM alerts all look
+  // identical; only an alarm in the `ALARM` state with the feature configured on
+  // attempts the owner call.
+  const ownerEnabledForThisAlarm = settings.ownerSuggestion.enabled && alarm.NewStateValue === 'ALARM';
+  if (onIncidentEvaluated) await onIncidentEvaluated(incident, context, ownerEnabledForThisAlarm && incident.status === 'evaluated');
+  const owner = ownerEnabledForThisAlarm
+    ? await evaluateOwner(settings, context, incident.status, options)
+    : undefined;
+  return { ...incident, context, owner };
 }
 
 /**
@@ -265,6 +443,13 @@ function alertDetails(
     evaluationStatus: evaluation.status,
     ...(evaluation.result ? { result: evaluation.result } : {}),
     ...(evaluation.errorCode ? { errorCode: evaluation.errorCode } : {}),
+    ...(evaluation.owner ? {
+      ownerStatus: evaluation.owner.status,
+      ...(evaluation.owner.result ? { ownerResult: evaluation.owner.result } : {}),
+      ...(evaluation.owner.candidates ? { ownerCandidates: evaluation.owner.candidates } : {}),
+      ...(evaluation.owner.shortened ? { ownerShortened: true } : {}),
+      ...(evaluation.owner.errorCode ? { ownerErrorCode: evaluation.owner.errorCode } : {}),
+    } : {}),
     snsMessageId: envelope.MessageId,
     topicArn: envelope.TopicArn,
   };
@@ -332,7 +517,38 @@ export type AwsAlertEventHandlerOptions = {
   maxConcurrent?: number;
   /** Recorded when no evaluator was supplied, so the alert states why rather than guessing. */
   notEvaluatedReason?: AwsAlertNotEvaluatedReason;
+  /** Supplies catalog Group candidates for the owner suggestion call, when enabled. */
+  loadGroups?: LoadOwnerGroups;
+  /** Reads the currently stored details for a scope; used only to preserve a previously
+   * evaluated owner suggestion across a redelivered SNS message (see below). */
+  readDetails?: (scope: string) => Promise<JevAwsAlertDetails | undefined>;
 };
+
+/**
+ * If this delivery's owner attempt ended `failed` or `not-evaluated` but an earlier
+ * delivery for the same scope already stored an `evaluated` owner suggestion, keep
+ * that earlier suggestion (result, candidates, and shortened flag) rather than
+ * overwrite a good suggestion with a transient failure from a redelivered message.
+ * Only the owner fields are ever substituted this way; incident semantics — the
+ * notification, and the incident `result`/`errorCode` — are never touched here.
+ *
+ * `existing` must be read *before* this delivery's own pending detail row is
+ * written: that pending write already overwrites the scope with a fresh
+ * `not-evaluated`/`evaluation-pending` row, so reading "the current stored row"
+ * only after evaluating would just read this delivery's own pending write back,
+ * never an earlier delivery's result.
+ */
+function preserveEvaluatedOwner(details: JevAwsAlertDetails, existing: JevAwsAlertDetails | undefined): JevAwsAlertDetails {
+  if (!details.ownerStatus || details.ownerStatus === 'evaluated' || existing?.ownerStatus !== 'evaluated') return details;
+  const { ownerErrorCode: _droppedOwnerErrorCode, ...withoutOwnerError } = details;
+  return {
+    ...withoutOwnerError,
+    ownerStatus: existing.ownerStatus,
+    ...(existing.ownerResult !== undefined ? { ownerResult: existing.ownerResult } : {}),
+    ...(existing.ownerCandidates !== undefined ? { ownerCandidates: existing.ownerCandidates } : {}),
+    ...(existing.ownerShortened !== undefined ? { ownerShortened: existing.ownerShortened } : {}),
+  };
+}
 
 /**
  * Saves the standard notification first, then its initial detail row, then evaluates
@@ -341,13 +557,22 @@ export type AwsAlertEventHandlerOptions = {
  */
 export function createAwsAlertEventHandler(options: AwsAlertEventHandlerOptions): (params: EventParams) => Promise<void> {
   const { settings, send, saveDetails, logger } = options;
+  // One counter for incident evaluation. The owner call, when it runs, shares the same
+  // slot the incident call for that alarm already claimed (see `evaluateOwner`); it
+  // never claims a second one, so this pool still bounds concurrent *alarms*, not calls.
   const capacity = createEvaluationCapacity(options.maxConcurrent ?? maxConcurrentAwsEvaluations);
+  const ownerOptions = { loadGroups: options.loadGroups };
   return async params => {
     const parsed = parseAwsCloudWatchEvent(params.eventPayload, settings.allowedTopicArns);
     if (!parsed) {
       logger.warn('Ignored an AWS event that failed SNS or CloudWatch validation');
       return;
     }
+    // Read whatever is currently stored for this scope, if anything, before this
+    // delivery's own pending write can overwrite it — needed only to preserve an
+    // earlier delivery's evaluated owner suggestion across a redelivered message.
+    const scope = `${settings.eventTopic}:${parsed.envelope.MessageId}`;
+    const existingDetails = options.readDetails ? await options.readDetails(scope).catch(() => undefined) : undefined;
     // Capacity is claimed before the first write so the stored detail states whether an
     // evaluation is actually going to run. There is no queue: a saturated process
     // records the reason instead.
@@ -355,8 +580,12 @@ export function createAwsAlertEventHandler(options: AwsAlertEventHandlerOptions)
     const reason: AwsAlertNotEvaluatedReason = !options.evaluate
       ? options.notEvaluatedReason ?? 'jev-not-configured'
       : evaluate ? 'evaluation-pending' : 'evaluation-capacity-reached';
-    const pending = await evaluateAlarm(parsed.alarm, settings, { notEvaluatedReason: reason });
+    const pending = await evaluateAlarm(parsed.alarm, settings, { notEvaluatedReason: reason, ...ownerOptions });
     const record = alertRecord(parsed, settings, pending);
+    // Every write of the details row — this first, pending one included — goes through
+    // preservation: a redelivery that has not even reached the provider yet must not be
+    // the write that erases an earlier delivery's already-evaluated owner suggestion.
+    record.details = preserveEvaluatedOwner(record.details, existingDetails);
     try {
       // Persist every valid alert before anything else. A provider timeout, an
       // overloaded process, or a failing detail write therefore cannot erase the alert.
@@ -380,10 +609,26 @@ export function createAwsAlertEventHandler(options: AwsAlertEventHandlerOptions)
       // A context the shared evaluation schema refuses is already recorded with its own
       // reason; only a pending alert is sent to the provider.
       if (pending.errorCode === 'evaluation-pending') {
-        const evaluated = await evaluateAlarm(parsed.alarm, settings, { evaluate });
+        const evaluated = await evaluateAlarm(parsed.alarm, settings, { evaluate, ...ownerOptions }, async (incident, context, willRunOwnerCall) => {
+          // The owner path (a catalog read plus a second provider call) can take up to
+          // its own latency budget; a reader must not wait that long to see triage that
+          // already finished. Only worth the extra write when that path is actually
+          // about to run — otherwise the final write below follows immediately anyway.
+          if (!willRunOwnerCall) return;
+          const incidentOnly: AlarmEvaluation = { ...incident, context, owner: { status: 'not-evaluated', errorCode: 'evaluation-pending' } };
+          const incidentDetails = preserveEvaluatedOwner(alertDetails(parsed, incidentOnly), existingDetails);
+          try {
+            await saveDetails(record.scope, incidentDetails);
+          } catch {
+            // The alert already carries its pending detail row; only this early triage
+            // publish is missing, and the final write below will still supersede it.
+            logger.warn('Saved an AWS alert\'s incident result early without its structured detail row');
+          }
+        });
         // Provider failures arrive here as a `failed` detail, so the outcome is stored
         // either way and the notification itself is never rewritten.
-        await saveDetails(record.scope, alertDetails(parsed, evaluated));
+        const finalDetails = preserveEvaluatedOwner(alertDetails(parsed, evaluated), existingDetails);
+        await saveDetails(record.scope, finalDetails);
       }
     } catch {
       // The saved alert is already present; do not turn a Jev or detail write error
@@ -411,6 +656,125 @@ export {
   maxAwsAlertPageLimit,
   maxAwsAlertPageOffset,
 } from './router';
+
+/**
+ * Fixed floor for the negative-cache window below. A burst of alarms during a catalog
+ * outage would otherwise each retry the catalog (or, without single-flight, pile up
+ * concurrent in-flight reads against an already-struggling catalog); a short, fixed
+ * window bounds that without introducing a configuration knob or risking a real
+ * recovery being masked for as long as the (much longer) positive `cacheSeconds`
+ * window would.
+ */
+export const ownerGroupNegativeCacheSeconds = 15;
+
+/**
+ * The negative-cache window actually used: at least `ownerGroupNegativeCacheSeconds`,
+ * and at least `2 × timeoutMs` (the worst case a single catalog read can occupy an
+ * evaluation capacity slot for — the read itself has no abort signal, so a hanging
+ * catalog would otherwise let a fresh read start again almost immediately after the
+ * 15-second floor, occupying another slot for up to another `timeoutMs` before that
+ * one, too, times out). Each alarm that starts a *fresh* read during a real outage
+ * still holds its capacity slot for up to `timeoutMs` before the read itself times
+ * out and this window begins — the negative cache only prevents *further* alarms
+ * from starting further fresh reads during that window, it does not shorten the
+ * one already in flight.
+ */
+export function ownerGroupNegativeCacheSecondsFor(timeoutMs: number): number {
+  return Math.max(ownerGroupNegativeCacheSeconds, (2 * timeoutMs) / 1_000);
+}
+
+/**
+ * Wraps a catalog read with an in-memory cache and single-flight de-duplication:
+ * concurrent alarms share one catalog request rather than each alarm in a burst
+ * issuing its own. A successful load is cached for `cacheSeconds`; a failed load is
+ * cached too, but only for the much shorter `negativeCacheSeconds`
+ * (`ownerGroupNegativeCacheSecondsFor`), so a transient failure does not stick around
+ * as long as a real answer would, while a sustained outage still cannot cause a
+ * pile-up of concurrent catalog reads.
+ */
+export function createOwnerGroupCache(load: LoadOwnerGroups, cacheSeconds: number, negativeCacheSeconds: number, now: () => number = Date.now): LoadOwnerGroups {
+  let cached: { expiresAt: number; groups: Candidate[] } | undefined;
+  let failedUntil: number | undefined;
+  let inFlight: Promise<Candidate[]> | undefined;
+  return async () => {
+    if (cached && cached.expiresAt > now()) return cached.groups;
+    if (failedUntil !== undefined && failedUntil > now()) {
+      throw new Error('The catalog Group read failed recently; retry after the negative-cache window.');
+    }
+    if (inFlight) return inFlight;
+    const promise = load();
+    inFlight = promise;
+    // Both branches are handled here so this bookkeeping chain never becomes an
+    // unhandled rejection; the actual failure still propagates through `promise`,
+    // which every caller (this one and any that joined via `inFlight`) awaits.
+    promise.then(
+      groups => { cached = { groups, expiresAt: now() + cacheSeconds * 1_000 }; failedUntil = undefined; inFlight = undefined; },
+      () => { failedUntil = now() + negativeCacheSeconds * 1_000; inFlight = undefined; },
+    );
+    return promise;
+  };
+}
+
+/**
+ * Bounds a catalog read to `timeoutMs`, the same deadline the Jev client applies
+ * to a provider call. `CatalogClient` accepts no abort signal, so the underlying
+ * request keeps running in the background; only this caller's wait is bounded.
+ * Together with the incident call and the owner Jev call, each independently
+ * bounded by `timeoutMs`, the worst case added latency before the final detail
+ * row is written is 3 × `timeoutMs`. That never delays the notification itself,
+ * which is already saved before any of these three calls starts.
+ */
+function withCatalogTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Catalog group lookup timed out')), timeoutMs);
+    work.then(
+      value => { clearTimeout(timer); resolve(value); },
+      error => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+/**
+ * Loads up to `maxGroups` catalog Group entities, in the shared candidate ordering,
+ * as validated `Candidate`s. Requests only the entity fields the mapping in
+ * `entityToCandidate` actually reads, rather than the whole entity. Each mapped
+ * candidate is re-validated against the shared `candidateSchema`: a catalog entity
+ * whose long name or namespace produces an over-length id, for instance, is dropped
+ * rather than sent to Jev or allowed to fail the whole request. Only the count of
+ * dropped candidates is ever logged, never their content.
+ */
+export function createOwnerGroupLoader(
+  catalog: Pick<CatalogClient, 'getEntities'>,
+  auth: Pick<AuthService, 'getOwnServiceCredentials' | 'getPluginRequestToken'>,
+  maxGroups: number,
+  timeoutMs: number,
+  logger?: Pick<LoggerService, 'warn'>,
+): LoadOwnerGroups {
+  return () => withCatalogTimeout((async () => {
+    const credentials = await auth.getOwnServiceCredentials();
+    const { token } = await auth.getPluginRequestToken({ onBehalfOf: credentials, targetPluginId: 'catalog' });
+    const response = await catalog.getEntities({
+      filter: { kind: 'Group' },
+      // Only the fields `entityToCandidate` reads: the entity ref (kind/namespace/name)
+      // plus the title, description, and tags that become the candidate text.
+      fields: ['kind', 'metadata.name', 'metadata.namespace', 'metadata.title', 'metadata.description', 'metadata.tags'],
+      limit: maxGroups,
+      // CatalogClient.getEntities calls this `order`, unlike the frontend catalogApi's
+      // `orderFields`; the shape is identical, so the same shared constant is reused.
+      order: catalogCandidateOrderFields,
+    }, { token });
+    const mapped = response.items.map(entityToCandidate);
+    const valid: Candidate[] = [];
+    let dropped = 0;
+    for (const candidate of mapped) {
+      const parsed = candidateSchema.safeParse(candidate);
+      if (parsed.success) valid.push(parsed.data);
+      else dropped += 1;
+    }
+    if (dropped > 0) logger?.warn(`Dropped ${dropped} catalog Group candidate(s) that failed validation`);
+    return valid;
+  })(), timeoutMs);
+}
 
 export const awsNotificationsModule = createBackendModule({
   pluginId: 'jev-operations-support',
@@ -446,6 +810,15 @@ export const awsNotificationsModule = createBackendModule({
         // packaged migration. The notification itself stays with the Notifications backend.
         const store = await createAwsAlertDetailsStore(database, { logger });
         httpRouter.use(createAwsAlertsRouter({ httpAuth, auth, discovery, store, logger }));
+        // Only built when the owner suggestion is enabled: an unconfigured or disabled
+        // install never issues the catalog request that backs it.
+        const loadGroups = settings.ownerSuggestion.enabled
+          ? createOwnerGroupCache(
+            createOwnerGroupLoader(new CatalogClient({ discoveryApi: discovery }), auth, settings.ownerSuggestion.maxGroups, settings.timeoutMs, logger),
+            settings.ownerSuggestion.cacheSeconds,
+            ownerGroupNegativeCacheSecondsFor(settings.timeoutMs),
+          )
+          : undefined;
         await events.subscribe({
           id: awsAlertEventSubscriberId,
           topics: [settings.eventTopic],
@@ -454,8 +827,14 @@ export const awsNotificationsModule = createBackendModule({
             logger,
             send: notification => notifications.send(notification),
             saveDetails: (scope, details) => store.save(scope, details),
+            // Only wired when owner suggestion is enabled: an install that never uses it
+            // must not pay for an extra read on every single alarm. Used only to preserve
+            // a previously evaluated owner suggestion across a redelivered SNS message; a
+            // failed read here simply skips that preservation.
+            readDetails: settings.ownerSuggestion.enabled ? scope => store.read([scope]).then(rows => rows.get(scope)?.details) : undefined,
             evaluate: client?.evaluate,
             notEvaluatedReason: disabledReason,
+            loadGroups,
           }),
         });
         logger.info('Jev AWS notification module subscribed to its configured Events topic');

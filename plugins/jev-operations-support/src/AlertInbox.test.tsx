@@ -1,13 +1,19 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { demoEvaluation, type EvaluationRequest, type EvaluationResult } from '@namayasai/backstage-plugin-jev-operations-support-common';
-import { AlertInbox, parseAlertNotificationPage } from './AlertInbox';
+import { cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { awsAlertOwnerErrorCodes, demoEvaluation, type Candidate, type EvaluationRequest, type EvaluationResult } from '@namayasai/backstage-plugin-jev-operations-support-common';
+import { AlertInbox, ownerErrorMessages, parseAlertNotificationPage } from './AlertInbox';
+import { resetLivePreferenceForTests, type EvaluateOptions } from './useLiveEvaluation';
 
+beforeEach(() => { window.localStorage.clear(); resetLivePreferenceForTests(); });
 afterEach(cleanup);
 
 const alarmArn = 'arn:aws:cloudwatch:ap-northeast-1:123:alarm:checkout';
 const context = 'Checkout requests fail for customers.';
+const ownerGroups: Candidate[] = [
+  { id: 'group:default/sre', entityRef: 'group:default/sre', title: 'SRE', description: 'Site reliability team' },
+  { id: 'group:default/payments', entityRef: 'group:default/payments', title: 'Payments platform', description: 'Payment processing' },
+];
 
 /** The shape the backend returns: a native notification row with details restored. */
 function rawRow(overrides: Record<string, unknown> = {}, metadata: Record<string, unknown> | null = {}) {
@@ -143,7 +149,8 @@ describe('AWS alert inbox', () => {
     expect(screen.getByText('Stored Jev result from receipt')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Re-check with Jev' }));
     await screen.findByText('Manual Jev re-check (not stored)');
-    expect(evaluate).toHaveBeenCalledWith({ workflow: 'incident', text: context, candidates: [] });
+    expect(evaluate.mock.calls[0][0]).toEqual({ workflow: 'incident', text: context, candidates: [] });
+    expect((evaluate.mock.calls[0] as unknown as [EvaluationRequest, EvaluateOptions?])[1]?.signal).toBeInstanceOf(AbortSignal);
     expect(screen.getByText('AWS state: ALARM')).toBeTruthy();
     expect(screen.getByText('Stored Jev result from receipt')).toBeTruthy();
   });
@@ -163,7 +170,7 @@ describe('AWS alert inbox', () => {
     const evaluate = vi.fn(() => new Promise<EvaluationResult>((resolve, reject) => {
       settle = outcome => (outcome instanceof Error ? reject(outcome) : resolve(outcome));
     }));
-    render(<AlertInbox loadNotifications={async () => parsed} evaluate={evaluate} />);
+    render(<AlertInbox autoCheck={false} loadNotifications={async () => parsed} evaluate={evaluate} />);
     await screen.findAllByText('checkout-high-errors');
     fireEvent.click(screen.getByRole('button', { name: 'Re-check with Jev' }));
     // Move to the other alert while the re-check of the first one is still running.
@@ -210,9 +217,371 @@ describe('AWS alert inbox', () => {
     expect(screen.queryByText('Manual Jev re-check (not stored)')).toBeNull();
   });
 
+  it('groups alerts by the impact Jev read, and assesses an unassessed alarm when it is opened', async () => {
+    window.localStorage.setItem('jev-operations-support.live', 'on');
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    render(<AlertInbox loadNotifications={async () => twoAlerts()} evaluate={evaluate} pollMs={0} />);
+    await screen.findAllByText('checkout-high-errors');
+    expect(screen.getByText('Limited impact')).toBeTruthy();
+    expect(screen.getByText('Not assessed by Jev')).toBeTruthy();
+    expect(evaluate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
+    await screen.findByText('Manual Jev re-check (not stored)');
+    expect(evaluate).toHaveBeenCalledTimes(1);
+    expect(evaluate.mock.calls[0][0]).toMatchObject({ workflow: 'incident', text: 'Identity logins fail for customers.' });
+    // The fresh assessment moves the alert out of the unassessed group.
+    expect(screen.queryByText('Not assessed by Jev')).toBeNull();
+  });
+
+  it('triages a pasted report in the same place, without losing the alert list', async () => {
+    window.localStorage.setItem('jev-operations-support.live', 'on');
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    render(<AlertInbox loadNotifications={async () => page()} evaluate={evaluate} pollMs={0} liveDelayMs={5} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Triage a report' }));
+    expect(screen.queryByRole('article', { name: 'AWS alert details' })).toBeNull();
+    fireEvent.change(screen.getByLabelText('Report'), { target: { value: 'Customers report that login fails since noon.' } });
+    await screen.findByText('Up to date');
+    expect(evaluate.mock.calls[0][0]).toMatchObject({ workflow: 'incident', text: 'Customers report that login fails since noon.' });
+    fireEvent.click(screen.getByRole('button', { name: /checkout-high-errors/ }));
+    expect(screen.getByRole('article', { name: 'AWS alert details' })).toBeTruthy();
+  });
+
+  it('does not auto-assess an unassessed alert while the report pane is open', async () => {
+    window.localStorage.setItem('jev-operations-support.live', 'on');
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    const parsed = twoAlerts();
+    // Put the unassessed alert first, so it is the default selection while the report pane opens.
+    const reversed = { ...parsed, notifications: [...parsed.notifications].reverse() };
+    render(<AlertInbox loadNotifications={async () => reversed} evaluate={evaluate} pollMs={0} liveDelayMs={5} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' }));
+    await screen.findAllByText('identity-high-errors');
+    expect(evaluate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
+    await waitFor(() => expect(evaluate).toHaveBeenCalledTimes(1));
+    expect(evaluate.mock.calls[0][0]).toMatchObject({ workflow: 'incident', text: 'Identity logins fail for customers.' });
+  });
+
+  it('picks up alerts that arrive while the inbox is open', async () => {
+    let pages = 0;
+    const loadNotifications = vi.fn(async () => (pages++ === 0 ? page() : twoAlerts()));
+    render(<AlertInbox autoCheck={false} loadNotifications={loadNotifications} evaluate={vi.fn()} pollMs={20} />);
+    await screen.findAllByText('checkout-high-errors');
+    await screen.findByText('identity-high-errors');
+    expect(screen.getByText('New')).toBeTruthy();
+  });
+
+  it('suggests an owning team for the selected alert from the catalog teams', async () => {
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    const loadOwners = vi.fn(async () => [{ id: 'group:default/payments', entityRef: 'group:default/payments', title: 'Payments', description: 'Checkout and billing' }, { id: 'group:default/identity', entityRef: 'group:default/identity', title: 'Identity', description: 'Login' }]);
+    render(<AlertInbox loadNotifications={async () => page()} evaluate={evaluate} loadOwners={loadOwners} pollMs={0} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Suggest owning team' }));
+    await screen.findByText('Suggested owner (not stored)');
+    expect(evaluate.mock.calls[0][0]).toMatchObject({ workflow: 'ownership', text: context });
+    expect(evaluate.mock.calls[0][0].candidates).toHaveLength(2);
+  });
+
   it('shows an unavailable notification service as an alert', async () => {
     render(<AlertInbox loadNotifications={async () => { throw new Error('Notifications unavailable'); }} evaluate={vi.fn()} />);
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Notifications unavailable'));
     expect(screen.getByText('No AWS alerts were returned.')).toBeTruthy();
+  });
+
+  it('report triage sends nothing with untouched storage (Live defaults to off), until Check now', async () => {
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    render(<AlertInbox loadNotifications={async () => page()} evaluate={evaluate} pollMs={0} liveDelayMs={5} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Triage a report' }));
+    expect((screen.getByRole('checkbox', { name: 'Live check' }) as HTMLInputElement).checked).toBe(false);
+    fireEvent.change(screen.getByLabelText('Report'), { target: { value: 'Customers cannot log in since noon.' } });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(evaluate).not.toHaveBeenCalled();
+    expect(screen.getByText(/Live check is off/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    await screen.findByText('Up to date');
+    expect(evaluate).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels a pending report send when the report pane is hidden within the quiet period', async () => {
+    window.localStorage.setItem('jev-operations-support.live', 'on');
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    render(<AlertInbox loadNotifications={async () => page()} evaluate={evaluate} pollMs={0} liveDelayMs={30} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Triage a report' }));
+    fireEvent.change(screen.getByLabelText('Report'), { target: { value: 'Customers cannot log in since noon.' } });
+    // Selecting an alert closes the report pane before the quiet period elapses.
+    fireEvent.click(screen.getByRole('button', { name: /checkout-high-errors/ }));
+    await new Promise(resolve => setTimeout(resolve, 60));
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-assess the same alert again after a refresh', async () => {
+    window.localStorage.setItem('jev-operations-support.live', 'on');
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    const loadNotifications = vi.fn(async () => twoAlerts());
+    render(<AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} pollMs={0} />);
+    await screen.findAllByText('checkout-high-errors');
+    fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
+    await waitFor(() => expect(evaluate).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(loadNotifications).toHaveBeenCalledTimes(2));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(evaluate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not auto-assess an alert while Live is off (the default, untouched)', async () => {
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    render(<AlertInbox loadNotifications={async () => twoAlerts()} evaluate={evaluate} pollMs={0} />);
+    await screen.findAllByText('checkout-high-errors');
+    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' }));
+    expect((screen.getByRole('checkbox', { name: 'Live check' }) as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-assess an alert that was clicked while Live was off, even once Live is turned on afterwards', async () => {
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    render(<AlertInbox loadNotifications={async () => twoAlerts()} evaluate={evaluate} pollMs={0} />);
+    await screen.findAllByText('checkout-high-errors');
+    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' }));
+    // Live is off by default, untouched; the click itself expressed no intent. The row's own
+    // click closes the report pane, so the checkbox is not on screen while this happens.
+    expect((screen.getByRole('checkbox', { name: 'Live check' }) as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Live check' }));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-assess an alert that was clicked while this view was inactive, even after it becomes active', async () => {
+    window.localStorage.setItem('jev-operations-support.live', 'on');
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    const loadNotifications = vi.fn(async () => twoAlerts());
+    const view = render(<AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} pollMs={0} active={false} />);
+    await screen.findAllByText('checkout-high-errors');
+    fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
+    view.rerender(<AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} pollMs={0} active />);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
+  it('auto-assesses an unassessed alert opened after the reader turns Live on', async () => {
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    render(<AlertInbox loadNotifications={async () => twoAlerts()} evaluate={evaluate} pollMs={0} />);
+    await screen.findAllByText('checkout-high-errors');
+    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Live check' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' })); // close the report pane
+    fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
+    await waitFor(() => expect(evaluate).toHaveBeenCalledTimes(1));
+    expect(evaluate.mock.calls[0][0]).toMatchObject({ workflow: 'incident', text: 'Identity logins fail for customers.' });
+  });
+
+  it('points the reader at the manual re-check when the selected alert has no stored result and Live is off', async () => {
+    const parsed = twoAlerts();
+    // The unassessed alert first, so it is selected on the untouched (Live off) default.
+    const reversed = { ...parsed, notifications: [...parsed.notifications].reverse() };
+    render(<AlertInbox loadNotifications={async () => reversed} evaluate={vi.fn()} pollMs={0} />);
+    await screen.findAllByText('identity-high-errors');
+    expect(screen.getByText(/No automatic Jev result is stored on this alert/)).toBeTruthy();
+    expect(screen.getByText('Choose Re-check with Jev to assess it now.')).toBeTruthy();
+  });
+
+  it('assesses an unassessed alert once when it is clicked under normal conditions', async () => {
+    window.localStorage.setItem('jev-operations-support.live', 'on');
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    render(<AlertInbox loadNotifications={async () => twoAlerts()} evaluate={evaluate} pollMs={0} />);
+    await screen.findAllByText('checkout-high-errors');
+    fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
+    await waitFor(() => expect(evaluate).toHaveBeenCalledTimes(1));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(evaluate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not auto-assess or poll while inactive', async () => {
+    window.localStorage.setItem('jev-operations-support.live', 'on');
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    const loadNotifications = vi.fn(async () => twoAlerts());
+    render(<AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} pollMs={20} active={false} />);
+    await screen.findAllByText('checkout-high-errors');
+    fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
+    await new Promise(resolve => setTimeout(resolve, 60));
+    expect(evaluate).not.toHaveBeenCalled();
+    expect(loadNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a selected alert on screen with a caption when a background poll drops it, and sends nothing', async () => {
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    let calls = 0;
+    // pollMs is long enough that the background refresh only fires after the alert is selected.
+    const loadNotifications = vi.fn(async () => (calls++ === 0 ? twoAlerts() : page()));
+    render(<AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} pollMs={300} autoCheck={false} />);
+    await screen.findAllByText('checkout-high-errors');
+    fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
+    await screen.findByDisplayValue('Identity logins fail for customers.');
+    await waitFor(() => expect(loadNotifications).toHaveBeenCalledTimes(2), { timeout: 2000 });
+    await screen.findByText(/This alert is no longer on this page of the inbox/);
+    expect(screen.getByText('identity-high-errors')).toBeTruthy();
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
+  it('a successful background poll clears an earlier load error and seeds a selection', async () => {
+    let calls = 0;
+    const loadNotifications = vi.fn(async () => { calls++; if (calls === 1) throw new Error('AWS alerts could not be loaded.'); return page(); });
+    render(<AlertInbox loadNotifications={loadNotifications} evaluate={vi.fn()} pollMs={20} />);
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('AWS alerts could not be loaded.'));
+    await waitFor(() => expect(loadNotifications).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    // The first load failed with nothing selected; the recovering poll is the reader's only
+    // way back in, so it must not leave them with an empty details pane.
+    expect(screen.getByRole('article', { name: 'AWS alert details' })).toBeTruthy();
+    expect(screen.getAllByText('checkout-high-errors').length).toBeGreaterThan(0);
+  });
+
+  it('stops polling for good after a load fails with AlertsUnavailableError', async () => {
+    class AlertsUnavailableError extends Error {
+      constructor(message: string) { super(message); this.name = 'AlertsUnavailableError'; }
+    }
+    const loadNotifications = vi.fn(async () => { throw new AlertsUnavailableError('AWS alerts are unavailable.'); });
+    render(<AlertInbox loadNotifications={loadNotifications} evaluate={vi.fn()} pollMs={20} />);
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('AWS alerts are unavailable.'));
+    const callsAfterInitial = loadNotifications.mock.calls.length;
+    await new Promise(resolve => setTimeout(resolve, 80));
+    expect(loadNotifications).toHaveBeenCalledTimes(callsAfterInitial);
+  });
+
+  it('exposes the report triage pane\'s "off" explanation to assistive tech, not just a title attribute', async () => {
+    render(<AlertInbox loadNotifications={async () => page()} evaluate={vi.fn()} live={false} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Triage a report' }));
+    const toggle = screen.getByRole('checkbox', { name: 'Live check' }) as HTMLInputElement;
+    expect(toggle.disabled).toBe(true);
+    // The explanation must be reachable by keyboard/screen reader, not just a `title` attribute.
+    const describedById = toggle.getAttribute('aria-describedby');
+    expect(describedById).toBeTruthy();
+    expect(document.getElementById(describedById!)?.textContent).toMatch(/Automatic checks are turned off for this view/);
+  });
+});
+
+describe('AWS alert inbox: owner suggestion made at receipt', () => {
+  function withOwner(overrides: Record<string, unknown> = {}) {
+    return parseAlertNotificationPage({ totalCount: 1, notifications: [rawRow({}, {
+      ownerStatus: 'evaluated',
+      ownerResult: demoEvaluation({ workflow: 'ownership', text: context, candidates: ownerGroups }),
+      ...overrides,
+    })] });
+  }
+
+  it('shows an "Owner: <title>" chip in the row when the stored suggestion is a confident pass', async () => {
+    const parsed = withOwner();
+    render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    // demoEvaluation's fixture selects the first candidate ("c0") with high confidence (a pass).
+    await screen.findByText(`Owner: ${ownerGroups[0].title}`);
+  });
+
+  it('shows no owner chip in the row when the stored suggestion needs review', async () => {
+    const reviewResult: EvaluationResult = {
+      workflow: 'ownership', model: 'jev-1.13.0', evaluatedAt: '2026-09-19T10:00:00.000Z', mode: 'live', needsReview: true,
+      findings: [{ id: 'recommendation', title: 'Suggested responsible team', statement: 'x', status: 'review', value: 'none', kind: 'choice', confidence: 0.4, guidance: 'Confirm the fit before proceeding.' }],
+    };
+    const parsed = withOwner({ ownerResult: reviewResult });
+    render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await screen.findAllByText('checkout-high-errors');
+    expect(screen.queryByText(/^Owner:/)).toBeNull();
+  });
+
+  it('renders a stored owner suggestion in the detail pane, after the incident result', async () => {
+    const parsed = withOwner();
+    render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await screen.findByText('Stored Jev result from receipt');
+    await screen.findByText('Suggested owner from receipt');
+    expect(screen.getAllByText(/SRE/).length).toBeGreaterThan(0);
+  });
+
+  it('drops an owner result that fails the evaluation contract or is not the ownership workflow, without hiding the alert', async () => {
+    const wrongWorkflow = demoEvaluation({ workflow: 'incident', text: context, candidates: [] });
+    const parsed = parseAlertNotificationPage({ totalCount: 1, notifications: [rawRow({}, { ownerStatus: 'evaluated', ownerResult: wrongWorkflow })] });
+    render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await screen.findAllByText('checkout-high-errors');
+    expect(screen.getByText('AWS state: ALARM')).toBeTruthy();
+    await screen.findByText(/stored owner suggestion does not match the evaluation contract/);
+    expect(screen.queryByText('Suggested owner from receipt')).toBeNull();
+  });
+
+  it('explains a failed or not-evaluated stored owner status in one sentence', async () => {
+    const notEvaluated = parseAlertNotificationPage({ totalCount: 1, notifications: [rawRow({}, { ownerStatus: 'not-evaluated', ownerErrorCode: 'no-catalog-groups' })] });
+    render(<AlertInbox loadNotifications={async () => notEvaluated} evaluate={vi.fn()} />);
+    await screen.findByText(/No catalog Group entities were available/);
+  });
+
+  it('omits the owner section entirely when no owner fields are stored (feature disabled)', async () => {
+    const parsed = page();
+    render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await screen.findByText('Stored Jev result from receipt');
+    expect(screen.queryByText('Suggested owner from receipt')).toBeNull();
+    expect(screen.queryByText(/^No automatic owner suggestion/)).toBeNull();
+  });
+
+  it('shows "Suggest owning team" with no stored result, and "Re-suggest owning team" once one is stored', async () => {
+    const noOwner = page();
+    const withStoredOwner = withOwner();
+    const loadOwners = vi.fn(async () => ownerGroups);
+    render(<AlertInbox loadNotifications={async () => noOwner} evaluate={vi.fn()} loadOwners={loadOwners} pollMs={0} />);
+    await screen.findByRole('button', { name: 'Suggest owning team' });
+
+    cleanup();
+    render(<AlertInbox loadNotifications={async () => withStoredOwner} evaluate={vi.fn()} loadOwners={loadOwners} pollMs={0} />);
+    await screen.findByRole('button', { name: 'Re-suggest owning team' });
+  });
+
+  it('keeps the manual "Suggested owner (not stored)" section and label separate from a stored owner suggestion', async () => {
+    const parsed = withOwner();
+    const loadOwners = vi.fn(async () => ownerGroups);
+    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+    render(<AlertInbox loadNotifications={async () => parsed} evaluate={evaluate} loadOwners={loadOwners} pollMs={0} />);
+    await screen.findByText('Suggested owner from receipt');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Re-suggest owning team' }));
+    await screen.findByText('Suggested owner (not stored)');
+    expect(evaluate.mock.calls[0][0]).toMatchObject({ workflow: 'ownership', text: context });
+    // The stored section is unaffected by the manual, unsaved re-suggestion.
+    expect(screen.getByText('Suggested owner from receipt')).toBeTruthy();
+  });
+
+  it('labels a runner-up candidate from the stored shortlist instead of a raw c0/c1 key', async () => {
+    const parsed = withOwner({ ownerCandidates: ownerGroups.map(candidate => ({ id: candidate.id, title: candidate.title })) });
+    render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await screen.findByText('Suggested owner from receipt');
+    const section = within(screen.getByRole('group', { name: 'Suggested owner from receipt' }));
+    // A confident "pass" choice with a resolvable candidate link is expanded by default.
+    fireEvent.click(section.getByText('Probability distribution'));
+    // Both candidates from the stored shortlist are labelled by title in the breakdown
+    // (the chosen candidate's title also appears as the finding's own value, hence "any").
+    expect(section.getAllByText(ownerGroups[0].title).length).toBeGreaterThan(0);
+    expect(section.getAllByText(ownerGroups[1].title).length).toBeGreaterThan(0);
+    expect(section.queryByText(/^c\d+$/)).toBeNull();
+  });
+
+  it('falls back to "Candidate N" instead of a raw c0/c1 key when no stored shortlist is available', async () => {
+    const parsed = withOwner(); // no ownerCandidates stored
+    render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await screen.findByText('Suggested owner from receipt');
+    const section = within(screen.getByRole('group', { name: 'Suggested owner from receipt' }));
+    fireEvent.click(section.getByText('Probability distribution'));
+    expect(section.getByText('Candidate 1')).toBeTruthy();
+    expect(section.getByText('Candidate 2')).toBeTruthy();
+  });
+
+  it('notes when the stored shortlist was shortened to fit the evaluation budget', async () => {
+    const parsed = withOwner({ ownerShortened: true });
+    render(<AlertInbox loadNotifications={async () => parsed} evaluate={vi.fn()} />);
+    await screen.findByText(/shortened team descriptions were used/);
+  });
+
+  it('maps every owner error code the backend can store to a readable sentence', () => {
+    // `awsAlertOwnerErrorCodes` is the same source of truth the AWS notifications module
+    // uses (it re-exports this from the common package): if a code is added there and
+    // this map is not updated, this test fails rather than silently showing nothing.
+    for (const code of awsAlertOwnerErrorCodes) {
+      expect(ownerErrorMessages[code], `missing a message for owner error code "${code}"`).toBeTruthy();
+    }
   });
 });

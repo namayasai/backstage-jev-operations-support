@@ -189,7 +189,13 @@ worker and no configuration knob. Cleanup only ever removes rows from this table
 — it never deletes a notification. An alert whose detail row has expired, was
 never written, or cannot be read stays visible in the inbox with its title,
 alarm reason, and receipt time, and says that its details are unavailable; no
-AWS state is invented for it and no re-check is offered.
+AWS state is invented for it and no re-check is offered. The optional owner
+suggestion fields (see "Owner suggestion at receipt" below) live in this same
+JSON document and the same row, including `ownerCandidates` — the entity refs
+and titles of up to 20 catalog Groups sent for that alarm — so they share
+exactly this table, this 30-day retention, and this same fate on an unreadable
+or expired row; there is no separate table, column, or retention policy for
+them.
 
 ## Reading alerts
 
@@ -306,11 +312,178 @@ The Events service may log full event payloads at debug level. Keep debug
 logging and its retention policy in mind when alarms contain sensitive details;
 module logs contain only validation and stable failure information.
 
+## Owner suggestion at receipt
+
+An optional `ownerSuggestion` block makes a **second** Jev call at receipt, using
+the same alarm context but with catalog `Group` entities as candidates, so a
+suggested owner is already on the alert when the inbox is opened instead of
+requiring the manual "Suggest owning team" action. It is off by default:
+
+```yaml
+jevOperationsSupport:
+  awsNotifications:
+    ownerSuggestion:
+      enabled: true
+      maxGroups: 20        # 1-20, default 20
+      cacheSeconds: 300    # 30-3600, default 300
+```
+
+Turning this on makes **two** Jev provider calls per active alarm instead of
+one (incident triage, then the owner suggestion) and sends the loaded catalog
+Groups' titles, descriptions, and tags to the Jev provider as candidate
+context, in addition to the alarm summary incident triage already sends.
+Review both costs before enabling it.
+
+The owner call runs only for an alarm whose `NewStateValue` is `ALARM` **and**
+whose incident evaluation for that same receipt succeeded (`evaluationStatus:
+evaluated`): a suggestion is not useful for a resolved alarm, and there is no
+reliable context to suggest an owner from when incident triage itself could
+not run. For any other alarm state, or when the feature is off, **no owner
+fields are stored at all** — not even a `not-evaluated` status; see
+"What is stored" below.
+
+The owner call shares the same per-process Jev capacity slot the incident call
+for that alarm already holds, rather than claiming a second one of its own:
+incident and owner evaluation for one alarm are one logical unit of work, not
+two independent calls competing for the shared pool. Enabling owner suggestion
+therefore does **not** reduce how many *alarms* a saturated process can
+evaluate concurrently — it only means each of those alarms now makes two
+provider calls instead of one, back to back, before its slot is released.
+
+Up to `maxGroups` catalog `Group` entities are loaded in the same deterministic
+order (`kind`, then `metadata.namespace`, then `metadata.name`) and turned into
+candidates with the same mapping the frontend's catalog picker uses, so a
+Group's title and description sent to Jev cannot drift between an automatic
+suggestion and a manual one. Only the catalog fields that mapping actually
+reads are requested. Each mapped candidate is re-validated and a candidate
+that fails validation (for example, a catalog entity whose long name or
+namespace would produce an over-length id) is dropped; only the count of
+dropped candidates is ever logged, never their content.
+
+That list is cached in memory for `cacheSeconds`: concurrent alarms share one
+catalog read instead of each issuing its own. A **failed** catalog read is
+also cached, but only for a fixed, shorter negative-cache window — the larger
+of **15 seconds** and **2 × `timeoutMs`** — so a burst of alarms during a
+catalog outage cannot each start their own fresh catalog read (or pile up
+concurrent in-flight reads against an already-struggling catalog), while a
+real recovery is not masked for anywhere near as long as the (much longer)
+successful-read `cacheSeconds` window would mask it. The `2 × timeoutMs` floor
+matters because `CatalogClient` accepts no abort signal: a hanging catalog
+read keeps running for up to `timeoutMs` regardless of the cache, so a window
+shorter than that could let a fresh alarm start a second hanging read almost
+immediately after the first one's failure is cached. This does **not** make a
+sustained outage free: each alarm that starts a *fresh* read during the outage
+(the first one, and the first one again after each negative-cache window
+elapses) still holds its own evaluation capacity slot for up to `timeoutMs`
+while that read hangs — the negative cache only stops *further* alarms from
+starting *further* fresh reads during the window, it does not shorten the read
+already in flight. Both caches are per process and do not survive a restart,
+like the capacity limiter.
+
+The catalog read and the owner Jev call are each independently bounded by
+`timeoutMs`, the same deadline incident triage uses. Together with the
+incident call itself, the worst-case latency before the alert's *final*
+detail row is written is therefore **3 × `timeoutMs`**. This never delays the
+notification, which is already saved before any of these three calls starts.
+It also does not delay seeing the incident triage itself: when the owner call
+is actually going to run (feature enabled, alarm currently `ALARM`, and
+incident evaluation succeeded), the incident result is published in its own
+write as soon as it completes — before the catalog read or the owner Jev call
+even starts — so a reader is not left waiting on the owner path's own latency
+budget to see triage that already finished. The owner path can therefore add
+up to `2 × timeoutMs` *after* that early write before the alert's final state
+(the owner result, or its failure reason) appears. Every branch of the owner
+path resolves to a stored status rather than throwing, so a slow or failing
+owner call can only delay when that final write happens, never whether the
+alert or its incident triage is visible.
+
+The candidate list is not sent to Jev as-is if it would not fit the shared
+24,000-byte evaluation budget alongside the alarm context: descriptions are
+shortened first (an even per-candidate byte allowance, UTF-8 safe), and only if
+even title-only candidates do not fit are candidates dropped from the tail.
+`alert-context-too-large` is reserved for the (in practice unreachable, since
+incident triage already evaluated the same context with an empty candidate
+list) case where the alarm context *alone* cannot fit; a request that is still
+invalid after shortening for any other reason — most concretely, shortening
+alone cannot fix duplicate candidate ids, or a candidate list reduced to
+nothing by dropping — is reported as `invalid-owner-request` instead.
+
+### What is stored
+
+The result is stored as `ownerStatus: 'evaluated' | 'failed' | 'not-evaluated'`,
+an optional `ownerResult` (the same `ownership`-workflow evaluation shape the
+manual endpoint returns, including its own `evaluatedAt` — see the note on
+redelivery below), an optional `ownerCandidates`, an optional `ownerShortened`
+(`true` when the shortlist was shortened or had candidates dropped to fit the
+budget), and an optional `ownerErrorCode`. `ownerCandidates` is the shortlist
+actually sent to Jev for this row: the **entity ref and title** (`{ id, title
+}[]`, where `id` is the catalog entity ref) of up to `maxGroups` (at most 20)
+catalog Groups, so the frontend can label a runner-up candidate in the result's
+probability breakdown instead of showing a raw internal key. It is titles and
+entity refs only — never the full candidate descriptions sent to the
+provider — and is kept for as long as the row itself is (see "Where the alert
+details are stored"; retention is unchanged by this field). When
+`ownerSuggestion.enabled` is not set, or the alarm is not currently `ALARM`,
+**all of these fields are omitted entirely** rather than stored as
+`not-evaluated` — a disabled, unconfigured, or non-`ALARM` row is
+indistinguishable from before this feature existed. When it is enabled but no
+evaluator exists (demo mode, or no `apiKey`), the owner call is skipped for
+exactly the same reason incident triage skips its own call, and
+`ownerErrorCode` mirrors that same code (`jev-demo-mode` or
+`jev-not-configured`) rather than a separate "owner disabled" reason.
+
+| `ownerErrorCode` | Meaning |
+| --- | --- |
+| `jev-not-configured` / `jev-demo-mode` | Same reason incident triage reports for this installation; both calls are skipped together. |
+| `incident-not-evaluated` | This alarm's incident evaluation did not succeed, so no owner call was attempted. |
+| `no-catalog-groups` | The catalog returned no valid `Group` entities. |
+| `catalog-unavailable` | The catalog read failed or timed out (including a read refused by the 15-second negative cache). |
+| `evaluation-capacity-reached` | The shared per-process Jev capacity was full for the whole alarm (mirrored from incident triage; the owner call itself never independently hits this). |
+| `alert-context-too-large` | The alarm context alone exceeded the shared 24 KB evaluation budget. In practice unreachable for the owner call, since incident triage already evaluated the same context successfully. |
+| `invalid-owner-request` | The candidate list was still invalid after shortening, for a reason other than raw size (for example, every candidate had to be dropped to fit, or the shortlist otherwise fails the shared schema). |
+| `jev-busy` / `jev-error` | The provider call itself failed. |
+
+A **redelivered** SNS message (see "Delivery is best effort" below) that
+re-evaluates an alert whose owner suggestion was already `evaluated` will not
+overwrite that earlier suggestion with a transient failure: if the
+redelivery's own owner attempt ends `failed` or `not-evaluated`, the
+previously stored `ownerResult`, `ownerCandidates`, and `ownerShortened` are
+kept as they were. This preservation applies to **every** write of the detail
+row for that delivery — the initial pending row, the incident result
+published early (see above), and the final row alike — not only the last one,
+so the earlier suggestion survives a redelivery that never reaches a second
+write at all (the per-process Jev capacity was full, no evaluator was
+configured for this delivery, or the delivery's own final write itself
+failed) exactly as it survives one that does. Incident semantics are
+unaffected by this — the incident result is freshly (re-)evaluated on every
+delivery as before; only the owner fields are ever preserved this way, and
+only when the new attempt did not itself succeed. A preserved owner
+suggestion can therefore end up stored next to a *later* delivery's failed or
+not-evaluated incident result; its own `ownerResult.evaluatedAt` still shows
+when that suggestion was actually made, distinct from the row's own
+`updatedAt` (when it was last written) and from the incident result's own
+timestamp. Two concurrent deliveries for the same scope (redelivered or
+otherwise) are simply last-writer-wins on every column of the row, exactly
+like any other pair of concurrent writes to the same key; this preservation
+changes what is written, not the fact that whichever write lands last is what
+persists.
+
+A suggested owner is never written into the notification's title or
+description — a suggestion is not a fact — and it never changes catalog
+ownership. It is shown only in the alert's detail pane, alongside a manual
+"Suggest owning team"/"Re-suggest owning team" action that previews a fresh
+suggestion for the current screen without storing it, the same way "Re-check
+with Jev" works for incident triage.
+
 Each alarm causes at most one Jev request when a key is configured and
-evaluation capacity is available, one standard Notifications write, and two small
-writes to the plugin's own table. A manual re-check in the frontend is one more
-user-initiated request through the authenticated `/evaluate` endpoint. Provider
-usage, SQS polling, and Notifications storage costs follow the selected
+evaluation capacity is available, one standard Notifications write, and two
+small writes to the plugin's own table — or, when `ownerSuggestion.enabled` is
+true and the alarm is active, **two** Jev requests, an occasional catalog
+read, and **three** small writes to the plugin's own table (the extra one
+being the incident result published early, before the owner call starts). A
+manual re-check or a manual "Suggest owning team" click in the frontend is one
+more user-initiated request through the authenticated `/evaluate` endpoint.
+Provider usage, SQS polling, and Notifications storage costs follow the selected
 Backstage and AWS plans. Start with one test alarm and an exact TopicArn allowlist before
 expanding recipients or alarm volume. The module does not estimate AWS or Jev
 pricing.

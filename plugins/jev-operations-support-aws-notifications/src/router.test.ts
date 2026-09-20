@@ -101,6 +101,23 @@ describe('AWS alert read endpoint', () => {
     expect(response.body.notifications[0].payload.metadata.jevOperationsSupport).toMatchObject({ ...details(), updatedAt: '2026-09-19T10:00:05.000Z' });
   });
 
+  it('restores the owner suggestion fields alongside the incident result, when stored', async () => {
+    const store = memoryStore({
+      'aws-cloudwatch:message-001': details({
+        ownerStatus: 'evaluated',
+        ownerResult: { workflow: 'ownership', findings: [] },
+      }),
+    });
+    const { app } = harness({ store });
+
+    const response = await request(app).get('/aws-alerts');
+
+    expect(response.body.notifications[0].payload.metadata.jevOperationsSupport).toMatchObject({
+      ownerStatus: 'evaluated',
+      ownerResult: { workflow: 'ownership', findings: [] },
+    });
+  });
+
   it('applies the fixed topic, origin, and page bounds instead of anything the caller supplies', async () => {
     const store = memoryStore({
       'aws-cloudwatch:message-001': details(),
