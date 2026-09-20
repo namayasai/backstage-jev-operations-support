@@ -40,10 +40,10 @@ function Playground() {
   return <UnifiedThemeProvider theme={dark ? themes.dark : themes.light}>
     <CssBaseline />
     <Box p={3}>
-      <Typography variant="overline" color="textSecondary">Jev Operations Support · fixture playground</Typography>
+      <Typography variant="overline" color="textSecondary">Jev Operations Support · demo data</Typography>
       <Tabs value={view} indicatorColor="primary" textColor="primary" onChange={(_, next) => setView(next)} style={{ marginBottom: 24 }}>
         <Tab value="alerts" label="Alerts" id="jev-tab-alerts" aria-controls="jev-tabpanel-alerts" />
-        <Tab value="playground" label="Playground" id="jev-tab-playground" aria-controls="jev-tabpanel-playground" />
+        <Tab value="playground" label="Pre-check" id="jev-tab-playground" aria-controls="jev-tabpanel-playground" />
       </Tabs>
       <div hidden={view !== 'alerts'} role="tabpanel" id="jev-tabpanel-alerts" aria-labelledby="jev-tab-alerts"><AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} pollMs={0} active={view === 'alerts'} /></div>
       <div hidden={view !== 'playground'} role="tabpanel" id="jev-tabpanel-playground" aria-labelledby="jev-tab-playground"><JevWorkbench demo evaluate={evaluate} workflowIds={['readiness', 'change-risk', 'templates', 'ownership', 'search']} initialText={sampleText.readiness} active={view === 'playground'} /></div>

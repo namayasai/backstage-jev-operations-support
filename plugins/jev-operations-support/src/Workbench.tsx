@@ -37,6 +37,16 @@ const templateExamples: Candidate[] = [
   { id: 'static', title: 'Static website', description: 'Static HTML and CSS website hosted on object storage. No server or database.' },
 ];
 
+// The same evaluations used by automated integrations, applied before a human action.
+const precheckCopy: Record<WorkflowId, { inputLabel: string; purpose: string; candidateLabel?: string; title?: string }> = {
+  readiness: { inputLabel: 'Runbook or operating procedure', purpose: 'Before publishing a runbook or handing over a service, check that startup, health verification, rollback, and escalation steps are documented.' },
+  'change-risk': { inputLabel: 'Proposed change and rollout plan', purpose: 'Before opening a pull request or reviewing a rollout, check for compatibility, data migration, and access-control concerns, plus a documented rollback.' },
+  ownership: { inputLabel: 'Service or issue to assign', purpose: 'Before assigning work or handing over a service, compare its responsibilities with catalog teams and identify an owner to consult.', candidateLabel: 'Teams to consider' },
+  templates: { inputLabel: 'Service requirements', purpose: 'Before creating a service, compare its requirements with available templates and identify a suitable starting point.', candidateLabel: 'Templates to compare' },
+  search: { title: 'Reference relevance', inputLabel: 'Question to answer', purpose: 'Before relying on a document or catalog entry, check which shortlisted references best address your question.', candidateLabel: 'References to compare' },
+  incident: { inputLabel: 'Incident report', purpose: 'Before escalating an incident, check the reported customer impact and the first investigation area supported by the symptoms.' },
+};
+
 const useStyles = makeStyles(theme => ({
   sticky: { [theme.breakpoints.up('md')]: { position: 'sticky', top: theme.spacing(2) } },
   selector: { marginBottom: theme.spacing(3), borderBottom: `1px solid ${theme.palette.divider}` },
@@ -77,6 +87,7 @@ export function JevWorkbench({ evaluate, loadCandidates, renderCandidateLink, wo
   const catalogRun = useRef(0);
   const techDocsRun = useRef(0);
   const current = workflows.find(w => w.id === workflow)!;
+  const copy = precheckCopy[workflow];
   const needsCandidates = candidateWorkflows.includes(workflow);
   const check = useLiveEvaluation({ evaluate, workflow, text, candidates, live, delayMs: liveDelayMs, paused: catalogBusy || techDocsBusy || !active, hold: held });
   const pendingTitles = useMemo(() => buildEvaluation({ workflow, text: '', candidates: needsCandidates ? candidates : [] }).checks.map(c => c.title || 'Untitled candidate'), [workflow, candidates, needsCandidates]);
@@ -149,18 +160,18 @@ export function JevWorkbench({ evaluate, loadCandidates, renderCandidateLink, wo
   const stateLabel = check.busy ? 'Checking with Jev…'
     // A pending retry after a failure is not "waiting for you to pause": the input is already
     // settled and Jev itself, not the reader, is the reason nothing has been sent yet.
-    : check.pending && check.retryAt ? 'Retrying automatically after a failure — or choose Check now'
+    : check.pending && check.retryAt ? 'Retrying automatically after a failure — or choose Run pre-check'
     : check.pending ? 'Waiting for you to pause…'
     : check.stale ? (live ? 'Out of date' : 'Out of date — live check is off')
     : checked ? `Up to date · ${new Date(check.result!.evaluatedAt).toLocaleTimeString()}`
-    : held ? 'Not checked for this workflow yet — edit the text or choose Check now'
-    : live ? 'Checks run as you type' : 'Live check is off — choose Check now, or turn on Live to check as you type';
+    : held ? 'Not checked for this workflow yet — edit the text or choose Run pre-check'
+    : live ? 'Checks run as you type' : 'Live check is off — choose Run pre-check, or turn on Live to check as you type';
 
   return <>
     {offered.length > 1 && <Tabs value={workflow} className={classes.selector} aria-label="Decision workflows"
       variant="scrollable" scrollButtons="auto" indicatorColor="primary" textColor="primary"
       onChange={(_, next: WorkflowId) => { if (next !== workflow) switchWorkflow(next); }}>
-      {offered.map(w => <Tab key={w.id} value={w.id} label={w.title} className={classes.tab}
+      {offered.map(w => <Tab key={w.id} value={w.id} label={precheckCopy[w.id].title ?? w.title} className={classes.tab}
         id={`${tabsId}-tab-${w.id}`} aria-controls={`${tabsId}-panel-${w.id}`} />)}
     </Tabs>}
     <Grid container spacing={3} alignItems="flex-start"
@@ -168,7 +179,7 @@ export function JevWorkbench({ evaluate, loadCandidates, renderCandidateLink, wo
       id={`${tabsId}-panel-${workflow}`} aria-labelledby={offered.length > 1 ? `${tabsId}-tab-${workflow}` : undefined}>
     <Grid item xs={12} md={7}>
       <Card>
-        <CardHeader title={current.title} subheader={current.description} titleTypographyProps={{ variant: 'h5', component: 'h2' }} />
+        <CardHeader title={copy.title ?? current.title} subheader={copy.purpose} titleTypographyProps={{ variant: 'h5', component: 'h2' }} />
         <Divider />
         <CardContent>
           {demo && <Alert severity="warning" role="note" style={{ marginBottom: 16 }}>Demo mode — results are fixed illustrative examples. No API call is made, and your text is not evaluated.</Alert>}
@@ -184,14 +195,14 @@ export function JevWorkbench({ evaluate, loadCandidates, renderCandidateLink, wo
             {techDocsNote && !techDocsSource && <Typography variant="caption" color="textSecondary" role="status" component="p">{techDocsNote}</Typography>}
             {techDocsSource && <Typography variant="caption" color="textSecondary" role="status" component="p">Loaded {techDocs.entityRef}/{techDocsSource} ({techDocsSource === 'index.html' ? 'full rendered page' : 'selected page; it may be a partial excerpt'}).</Typography>}
           </Box>}
-          <TextField id="jev-context" label="Context" variant="outlined" fullWidth multiline minRows={needsCandidates ? 4 : 12} maxRows={28} value={text} placeholder={current.prompt} onChange={e => { setText(e.target.value); setTechDocsSource(''); setHeld(false); }} error={check.overLimit} />
+          <TextField id="jev-context" label={copy.inputLabel} variant="outlined" fullWidth multiline minRows={needsCandidates ? 4 : 12} maxRows={28} value={text} placeholder={current.prompt} onChange={e => { setText(e.target.value); setTechDocsSource(''); setHeld(false); }} error={check.overLimit} />
           <Box display="flex" justifyContent="space-between" flexWrap="wrap" mt={0.5}>
             <Typography variant="caption" color="textSecondary">{current.prompt}</Typography>
             <Typography variant="caption" color={check.overLimit ? 'error' : 'textSecondary'} className={classes.counter}>{text.length.toLocaleString()} / 16,000 chars · {check.requestBytes.toLocaleString()} / {MAX_EVALUATION_BYTES.toLocaleString()} bytes</Typography>
           </Box>
           {needsCandidates && <Box mt={3}>
             <Box display="flex" justifyContent="space-between" alignItems="baseline">
-              <Typography variant="subtitle1" component="h3">Candidates</Typography>
+              <Typography variant="subtitle1" component="h3">{copy.candidateLabel ?? 'Candidates'}</Typography>
               <Typography variant="caption" color="textSecondary" className={classes.counter}>{candidates.length} / 20</Typography>
             </Box>
             <Typography variant="caption" color="textSecondary">Jev judges only this shortlist, not the entire catalog. Descriptions are sent with your context.</Typography>
@@ -211,20 +222,20 @@ export function JevWorkbench({ evaluate, loadCandidates, renderCandidateLink, wo
           {sourceError && <Alert severity="error" style={{ marginTop: 16 }}>{sourceError}</Alert>}
           <div className={classes.actions}>
             <Button size="small" onClick={() => loadExample(workflow)}>Load example input</Button>
-            <Typography variant="caption" color="textSecondary">{demo ? 'Fixtures stay in your browser.' : 'Checks send this context and candidate descriptions to TypeSafe through your Backstage backend.'}</Typography>
+            <Typography variant="caption" color="textSecondary">{demo ? 'Fixtures stay in your browser.' : 'Checks send this input and candidate descriptions to TypeSafe through your Backstage backend.'}</Typography>
           </div>
         </CardContent>
       </Card>
     </Grid>
     <Grid item xs={12} md={5} className={classes.sticky}>
       <Card>
-        <CardHeader title={workflow === 'search' ? 'Ranked candidates' : 'Jev checks'} titleTypographyProps={{ variant: 'h5', component: 'h2' }}
+        <CardHeader title={workflow === 'search' ? 'Reference comparison' : 'Pre-check results'} titleTypographyProps={{ variant: 'h5', component: 'h2' }}
           action={<LiveSwitch live={live} onChange={setLive} forcedOff={forcedOff} style={{ margin: '8px 8px 0 0' }} />} />
         <Divider />
         <CardContent>
           <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" mb={2} style={{ gap: 8 }}>
             <div className={classes.state} role="status">{check.busy && <CircularProgress size={14} />}<Typography variant="body2" color="textSecondary">{stateLabel}</Typography></div>
-            <Button variant={live ? 'outlined' : 'contained'} color="primary" size="small" disabled={check.busy || sourceBusy || check.overLimit} onClick={() => { setHeld(false); check.checkNow(); }}>{check.busy ? 'Checking…' : 'Check now'}</Button>
+            <Button variant={live ? 'outlined' : 'contained'} color="primary" size="small" disabled={check.busy || sourceBusy || check.overLimit} onClick={() => { setHeld(false); check.checkNow(); }}>{check.busy ? 'Checking…' : 'Run pre-check'}</Button>
           </Box>
           {check.error && <Alert severity="error" style={{ marginBottom: 16 }}>{check.error}</Alert>}
           {check.result ? <>

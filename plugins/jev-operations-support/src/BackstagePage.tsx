@@ -1,6 +1,6 @@
 import { useApi, useRouteRef, discoveryApiRef, fetchApiRef, configApiRef } from '@backstage/core-plugin-api';
 import { useCallback, useRef, useState } from 'react';
-import { Tab, Tabs } from '@material-ui/core';
+import { Tab, Tabs, Typography } from '@material-ui/core';
 import { Content, Header, Page } from '@backstage/core-components';
 import { catalogApiRef, useEntity, entityRouteRef } from '@backstage/plugin-catalog-react';
 import { stringifyEntityRef, parseEntityRef, type Entity } from '@backstage/catalog-model';
@@ -81,12 +81,12 @@ export interface JevPageProps {
 const entityReviewWorkflowIds: WorkflowId[] = ['readiness', 'change-risk'];
 
 type View = 'alerts' | 'playground';
-// These five run on their own elsewhere (pull requests, schedules, Scaffolder, Search); here
-// they can be tried by hand. Incident triage lives with the alerts, not here.
-const playgroundWorkflowIds: WorkflowId[] = ['readiness', 'change-risk', 'templates', 'ownership', 'search'];
+// These checks also run in automated integrations. This page lets a person check a draft
+// before a PR, handover, or service creation. Incident triage lives with Alerts.
+const precheckWorkflowIds: WorkflowId[] = ['readiness', 'change-risk', 'templates', 'ownership', 'search'];
 const views: { id: View; label: string }[] = [
   { id: 'alerts', label: 'Alerts' },
-  { id: 'playground', label: 'Playground' },
+  { id: 'playground', label: 'Pre-check' },
 ];
 
 /** Thrown when the optional AWS module is absent, so the page can open on another view. */
@@ -101,7 +101,7 @@ class AlertsUnavailableError extends Error {
 
 /**
  * Two places, by what the reader came to do: alerts that arrived on their own, and a
- * workflow to try by hand.
+ * draft to check before proceeding.
  */
 export function JevPage({ initialText, contextNote, techDocs, showAlerts = true, reviewWorkflows = entityReviewWorkflowIds, liveDelayMs, page }: JevPageProps) {
   const discovery = useApi(discoveryApiRef);
@@ -141,7 +141,7 @@ export function JevPage({ initialText, contextNote, techDocs, showAlerts = true,
   const review = <JevWorkbench evaluate={evaluate} workflowIds={reviewWorkflows} loadCandidates={loadCandidates} renderCandidateLink={renderCandidateLink} initialText={initialText} contextNote={contextNote} techDocs={techDocs} liveDelayMs={liveDelayMs} />;
   if (!showAlerts) return review;
   if (page === 'alerts') return <Content><AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} loadOwners={loadOwners} renderCandidateLink={renderCandidateLink} liveDelayMs={liveDelayMs} /></Content>;
-  if (page === 'playground') return <Content><JevWorkbench evaluate={evaluate} workflowIds={playgroundWorkflowIds} loadCandidates={loadCandidates} renderCandidateLink={renderCandidateLink} initialText={initialText} liveDelayMs={liveDelayMs} /></Content>;
+  if (page === 'playground') return <Content><Typography variant="body1" color="textSecondary" paragraph>Check a draft before a pull request, service handover, or service creation. Choose what you want to check, review the findings, and address any gaps before proceeding.</Typography><JevWorkbench evaluate={evaluate} workflowIds={precheckWorkflowIds} loadCandidates={loadCandidates} renderCandidateLink={renderCandidateLink} initialText={initialText} liveDelayMs={liveDelayMs} /></Content>;
   return <Content>
     <Tabs value={view} indicatorColor="primary" textColor="primary" onChange={(_, next: View) => { chose.current = true; open(next); }} aria-label="Operations Support views" style={{ marginBottom: 24 }}>
       {views.map(item => <Tab key={item.id} value={item.id} label={item.label} id={`jev-tab-${item.id}`} aria-controls={`jev-tabpanel-${item.id}`} />)}
@@ -149,13 +149,13 @@ export function JevPage({ initialText, contextNote, techDocs, showAlerts = true,
     {/* A view is mounted on first visit and kept, so switching never discards work in progress.
         `active` gates every unrequested send: a view the reader is not looking at sends and polls nothing. */}
     {opened.includes('alerts') && <div hidden={view !== 'alerts'} role="tabpanel" id="jev-tabpanel-alerts" aria-labelledby="jev-tab-alerts"><AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} loadOwners={loadOwners} renderCandidateLink={renderCandidateLink} liveDelayMs={liveDelayMs} active={view === 'alerts'} /></div>}
-    {opened.includes('playground') && <div hidden={view !== 'playground'} role="tabpanel" id="jev-tabpanel-playground" aria-labelledby="jev-tab-playground"><JevWorkbench evaluate={evaluate} workflowIds={playgroundWorkflowIds} loadCandidates={loadCandidates} renderCandidateLink={renderCandidateLink} initialText={initialText} contextNote={contextNote} techDocs={techDocs} liveDelayMs={liveDelayMs} active={view === 'playground'} /></div>}
+    {opened.includes('playground') && <div hidden={view !== 'playground'} role="tabpanel" id="jev-tabpanel-playground" aria-labelledby="jev-tab-playground"><JevWorkbench evaluate={evaluate} workflowIds={precheckWorkflowIds} loadCandidates={loadCandidates} renderCandidateLink={renderCandidateLink} initialText={initialText} contextNote={contextNote} techDocs={techDocs} liveDelayMs={liveDelayMs} active={view === 'playground'} /></div>}
   </Content>;
 }
 
 /** The same views under a Backstage page header, for apps that mount the page as a plain route. */
 export function JevStandalonePage(props: JevPageProps) {
-  return <Page themeId="tool"><Header title="Playground" subtitle="Try Jev checks with your own input" /><JevPage {...props} page="playground" /></Page>;
+  return <Page themeId="tool"><Header title="Pre-check" subtitle="Review a draft before a pull request, handover, or service creation" /><JevPage {...props} page="playground" /></Page>;
 }
 
 export function JevAlertsStandalonePage(props: JevPageProps) {

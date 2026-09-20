@@ -2,7 +2,7 @@
 
 Part of [Jev Operations Support for Backstage](https://github.com/namayasai/backstage-jev-operations-support). See the repository [installation guide](https://github.com/namayasai/backstage-jev-operations-support/blob/main/docs/installation.md) for configuration and integration.
 
-Besides the main `.`/`./alpha` exports (the Alerts/Playground page and entity tab), two more
+Besides the main `.`/`./alpha` exports (the Alerts/Pre-check page and entity tab), two more
 subpaths put a workflow where it is chosen rather than on a separate page: `./search`
 (`JevRerankedResults`, reranks a Backstage search result list — needs the optional peer
 dependency `@backstage/plugin-search-react`) and `./scaffolder` (`JevTemplateAdvisor`, a

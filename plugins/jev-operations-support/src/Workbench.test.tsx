@@ -14,7 +14,7 @@ describe('decision workbench', () => {
     render(<JevWorkbench evaluate={evaluate} liveDelayMs={5} />);
     expect(screen.getByText('Rollback procedure')).toBeTruthy();
     expect(screen.getAllByText('Not checked yet')).toHaveLength(4);
-    fireEvent.change(screen.getByLabelText('Context'), { target: { value: 'A sufficiently detailed runbook' } });
+    fireEvent.change(screen.getByLabelText('Runbook or operating procedure'), { target: { value: 'A sufficiently detailed runbook' } });
     await screen.findByText(/Up to date/);
     expect(evaluate).toHaveBeenCalledTimes(1);
     expect(screen.getByText('1 attention')).toBeTruthy();
@@ -23,7 +23,7 @@ describe('decision workbench', () => {
     const evaluate = vi.fn(async input => demoEvaluation(input));
     const view = render(<JevWorkbench evaluate={evaluate} liveDelayMs={5} />);
     expect((screen.getByRole('checkbox', { name: 'Live check' }) as HTMLInputElement).checked).toBe(false);
-    fireEvent.change(screen.getByLabelText('Context'), { target: { value: 'A sufficiently detailed runbook' } });
+    fireEvent.change(screen.getByLabelText('Runbook or operating procedure'), { target: { value: 'A sufficiently detailed runbook' } });
     await new Promise(resolve => setTimeout(resolve, 40));
     expect(evaluate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Live check' }));
@@ -35,22 +35,22 @@ describe('decision workbench', () => {
   });
   it('validates empty context without calling the provider', () => {
     const evaluate = vi.fn(); render(<JevWorkbench evaluate={evaluate} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run pre-check' }));
     expect(screen.getByRole('alert').textContent).toContain('10 characters');
     expect(evaluate).not.toHaveBeenCalled();
   });
   it('keeps the previous result, marked out of date, until the new one lands', async () => {
     render(<JevWorkbench demo live={false} evaluate={async input => demoEvaluation(input)} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run pre-check' }));
     await screen.findByText(/Up to date/);
     expect(screen.getByText('ILLUSTRATIVE RESULT')).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Context'), { target: { value: 'A different document' } });
+    fireEvent.change(screen.getByLabelText('Runbook or operating procedure'), { target: { value: 'A different document' } });
     expect(screen.getByText(/Out of date/)).toBeTruthy();
     expect(screen.getByText('Rollback procedure')).toBeTruthy();
   });
   it('drops a result when the workflow changes', async () => {
     render(<JevWorkbench live={false} initialText="A sufficiently detailed document" evaluate={async input => demoEvaluation(input)} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run pre-check' }));
     await screen.findByText(/Up to date/);
     fireEvent.click(screen.getByRole('tab', { name: /Incident triage/ }));
     expect(screen.queryByText(/Up to date|Out of date/)).toBeNull();
@@ -62,7 +62,7 @@ describe('decision workbench', () => {
     const evaluate = vi.fn(async input => demoEvaluation(input));
     render(<JevWorkbench demo live={false} evaluate={evaluate} />);
     fireEvent.click(screen.getByRole('tab', { name: /Template advisor/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run pre-check' }));
     await screen.findByText(/Up to date/);
     expect(evaluate.mock.calls[0][0].candidates).toHaveLength(2);
     expect(screen.getByText('Node.js + PostgreSQL', { selector: '.jev-value' })).toBeTruthy();
@@ -81,13 +81,13 @@ describe('decision workbench', () => {
     await new Promise(resolve => setTimeout(resolve, 40));
     // A failed request is not retried on its own.
     expect(evaluate).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect((screen.getByRole('button', { name: 'Check now' }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Run pre-check' }) as HTMLButtonElement).disabled).toBe(false));
   });
   it('loads the entity TechDocs on its own and stays quiet when there is none', async () => {
     window.localStorage.setItem('jev-operations-support.live', 'on');
     const evaluate = vi.fn(async input => demoEvaluation(input));
     const view = render(<JevWorkbench liveDelayMs={5} techDocs={{ entityRef: 'component:default/checkout', load: async () => 'Runbook: start with npm start and check /health.' }} evaluate={evaluate} />);
-    await waitFor(() => expect((screen.getByLabelText('Context') as HTMLTextAreaElement).value).toContain('npm start'));
+    await waitFor(() => expect((screen.getByLabelText('Runbook or operating procedure') as HTMLTextAreaElement).value).toContain('npm start'));
     await screen.findByText(/Up to date/);
     view.unmount();
     render(<JevWorkbench liveDelayMs={5} techDocs={{ entityRef: 'component:default/checkout', load: async () => { throw new Error('Not found'); } }} evaluate={evaluate} />);
@@ -98,7 +98,7 @@ describe('decision workbench', () => {
     window.localStorage.setItem('jev-operations-support.live', 'on');
     const evaluate = vi.fn(async input => demoEvaluation(input));
     render(<JevWorkbench liveDelayMs={5} evaluate={evaluate} />);
-    fireEvent.change(screen.getByLabelText('Context'), { target: { value: 'A sufficiently detailed runbook' } });
+    fireEvent.change(screen.getByLabelText('Runbook or operating procedure'), { target: { value: 'A sufficiently detailed runbook' } });
     await screen.findByText(/Up to date/);
     expect(evaluate).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('tab', { name: /Change review/ }));
@@ -106,7 +106,7 @@ describe('decision workbench', () => {
     await new Promise(resolve => setTimeout(resolve, 40));
     // Switching workflow kept the text, but must not have resent it.
     expect(evaluate).toHaveBeenCalledTimes(1);
-    fireEvent.change(screen.getByLabelText('Context'), { target: { value: 'A sufficiently detailed runbook, edited' } });
+    fireEvent.change(screen.getByLabelText('Proposed change and rollout plan'), { target: { value: 'A sufficiently detailed runbook, edited' } });
     await waitFor(() => expect(evaluate).toHaveBeenCalledTimes(2));
   });
 
@@ -114,7 +114,7 @@ describe('decision workbench', () => {
     window.localStorage.setItem('jev-operations-support.live', 'on');
     const evaluate = vi.fn(async input => demoEvaluation(input));
     render(<JevWorkbench liveDelayMs={5} active={false} evaluate={evaluate} />);
-    fireEvent.change(screen.getByLabelText('Context'), { target: { value: 'A sufficiently detailed runbook' } });
+    fireEvent.change(screen.getByLabelText('Runbook or operating procedure'), { target: { value: 'A sufficiently detailed runbook' } });
     await new Promise(resolve => setTimeout(resolve, 40));
     expect(evaluate).not.toHaveBeenCalled();
   });
@@ -134,11 +134,11 @@ describe('decision workbench', () => {
   it('keeps the current document and result when a requested TechDocs page fails', async () => {
     const text = 'A sufficiently detailed document';
     render(<JevWorkbench live={false} initialText={text} techDocs={{ entityRef: 'component:default/checkout', load: async () => { throw new Error('TechDocs unavailable'); } }} evaluate={async input => demoEvaluation(input)} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run pre-check' }));
     await screen.findByText(/Up to date/);
     fireEvent.click(screen.getByRole('button', { name: 'Load page' }));
     expect((await screen.findByRole('alert')).textContent).toContain('TechDocs unavailable');
-    expect((screen.getByLabelText('Context') as HTMLTextAreaElement).value).toBe(text);
+    expect((screen.getByLabelText('Runbook or operating procedure') as HTMLTextAreaElement).value).toBe(text);
     expect(screen.getByText(/Up to date/)).toBeTruthy();
   });
 });

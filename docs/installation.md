@@ -68,7 +68,7 @@ const app = createApp({
 });
 ```
 
-This adds separate **Alerts** (`/jev-alerts`) and **Playground** (`/jev-operations-support`) sidebar pages, plus an **Operations Support** entity tab. Preserve the app's existing catalog frontend feature, Catalog API, and route bindings. If your feature discovery already installs this plugin, use one registration mechanism rather than installing it twice.
+This adds separate **Alerts** (`/jev-alerts`) and **Pre-check** (`/jev-operations-support`) sidebar pages, plus an **Operations Support** entity tab. Preserve the app's existing catalog frontend feature, Catalog API, and route bindings. If your feature discovery already installs this plugin, use one registration mechanism rather than installing it twice.
 
 `jevPlugin` also registers two read-only entity cards, `EntityCardBlueprint` extensions with the full ids `entity-card:jev-operations-support/readiness` and `entity-card:jev-operations-support/owner-suggestion` (each with its own `filter`: the readiness card to `Component`, matching its default `targetKinds`; the owner card to `Component`/`API`/`Resource`/`System`, matching the owner-suggestion retriever's default `kinds`). If your app disables or reconfigures them, use these full ids. They read the latest result the optional Tech Insights module (section 5) already computed on its own schedule; they never call `/evaluate` themselves. Both are silent (no error styling) when the Tech Insights module is not installed.
 
@@ -89,7 +89,7 @@ Add a navigation item to your existing sidebar using your preferred icon:
 
 ```tsx
 <SidebarItem icon={YourAlertIcon} to="jev-alerts" text="Alerts" />
-<SidebarItem icon={YourIcon} to="jev-operations-support" text="Playground" />
+<SidebarItem icon={YourIcon} to="jev-operations-support" text="Pre-check" />
 ```
 
 Optionally add an entity tab in `EntityPage.tsx`:
@@ -102,7 +102,7 @@ import { EntityJevContent } from '@namayasai/backstage-plugin-jev-operations-sup
 </EntityLayout.Route>
 ```
 
-The entity tab shows the service ref and description separately from the editable document, which starts empty. Use the TechDocs page path field to load a page through the host `fetchApi` (so the current user's authentication and permissions apply), review or edit the extracted text, and click **Evaluate with Jev** explicitly. Loading a page never evaluates or sends it automatically. The loader removes navigation, headers, scripts, and styles from the HTML; it does not execute or render fetched HTML. It uses the entity's generated TechDocs storage path, or the host's optional `techdocs.storageUrl` when configured. A `backstage.io/techdocs-ref` annotation is shown for context but is not interpreted as a source path. A `backstage.io/techdocs-entity` annotation that points at another entity disables loading until that case is supported. If TechDocs is not installed, the entity workbench still works for pasted text.
+The entity tab shows the service ref and description separately from the editable document, which starts empty. Use the TechDocs page path field to load a page through the host `fetchApi` (so the current user's authentication and permissions apply), review or edit the extracted text, and click **Run pre-check** explicitly. Loading a page never evaluates or sends it automatically. The loader removes navigation, headers, scripts, and styles from the HTML; it does not execute or render fetched HTML. It uses the entity's generated TechDocs storage path, or the host's optional `techdocs.storageUrl` when configured. A `backstage.io/techdocs-ref` annotation is shown for context but is not interpreted as a source path. A `backstage.io/techdocs-entity` annotation that points at another entity disables loading until that case is supported. If TechDocs is not installed, the entity workbench still works for pasted text.
 
 Two read-only cards, `EntityJevReadinessCard` and `EntityJevOwnerSuggestionCard`, are also exported for `EntityPage.tsx`. Unlike the entity tab above, neither triggers an evaluation — there is no Live switch and no "Check now" — they only show the *latest scheduled* result from the optional Tech Insights module (section 5):
 

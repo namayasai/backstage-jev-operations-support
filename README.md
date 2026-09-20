@@ -6,7 +6,7 @@ Six focused decision workflows for [Backstage](https://backstage.io), powered by
 
 ![Jev Operations Support AWS alerts inbox inside Backstage 1.55.0, showing a synthetic CloudWatch fixture alarm](docs/backstage-workbench.png)
 
-![Readiness checks in the Playground (backend demo mode: illustrative results)](docs/backstage-result.png)
+![Readiness checks in the Pre-check (backend demo mode: illustrative results)](docs/backstage-result.png)
 
 ## Workflows
 
@@ -34,7 +34,7 @@ npm ci
 npm run dev
 ```
 
-Open the localhost URL. The standalone demo opens on an alert table; the **Playground** tab lets you try any of the other five workflows by hand, either by choosing "Check now" or by turning on the Live switch to check input as you edit it (Live is off by default, opt-in per browser, same as in a real Backstage instance). This playground deliberately uses fixed fixtures: it does not call Jev or judge edited text. Live evaluation is available through the Backstage backend and the smoke-test command below.
+Open the localhost URL. The standalone demo opens on an alert table; the **Pre-check** tab lets you try any of the other five workflows by hand, either by choosing "Run pre-check" or by turning on the Live switch to check input as you edit it (Live is off by default, opt-in per browser, same as in a real Backstage instance). This playground deliberately uses fixed fixtures: it does not call Jev or judge edited text. Live evaluation is available through the Backstage backend and the smoke-test command below.
 
 The repository's `.npmrc` uses `legacy-peer-deps` because Backstage's optional test peer dependencies produce conflicting React type resolutions under npm. Runtime React is pinned to 18 through root overrides; TypeScript and integration adapter tests check the installed versions. Use your Backstage application's existing package manager when integrating.
 
@@ -86,7 +86,7 @@ examples/playground/                             Standalone fixture UI using the
 
 The six workflows share one backend and UI package so installations need only one API key and one authorization policy. Each workflow is independently selected by its ID. The optional modules reuse the same `buildEvaluation`, `summarize`, and Jev client through the backend's `/client` export rather than adding a second transport or key.
 
-In Backstage, **Alerts** and **Playground** have separate sidebar entries. Alerts shows notification type, severity, log content and a Jev summary; selecting a row opens the details. Playground switches workflows with tabs.
+In Backstage, **Alerts** and **Pre-check** have separate sidebar entries. Alerts shows notification type, severity, log content and a Jev summary; selecting a row opens the details. Pre-check uses workflow tabs to review a draft before a pull request, handover, owner assignment, or service creation. Each workflow names the input it needs and shows findings to address before proceeding.
 
 ## Optional integrations
 
