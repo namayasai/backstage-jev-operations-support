@@ -2,6 +2,8 @@
 
 ## Version 0.4.0 release verification
 
+All five packages are public on npm at 0.4.0 with the `latest` tag. Anonymous downloads matched both registry SHA-512 integrity and the reviewed archives byte for byte. A fresh consumer installed all five by registry name with an empty user configuration and verified package entry points, backend CJS/ESM imports, the response-planner export and the AWS migration directory. See [0.4.0 publication verification](npm-publication-0.4.0.json).
+
 The 0.4.0 release includes the dedicated Alerts, Triage and Pre-check pages, PR reporting, entity cards and optional OpenAI, Claude and compatible-API response planning. Release checks passed 865 tests across 26 files on Node.js 22, type checking, all five package builds, and the fixture demo build. All five 0.4.0 archives were then installed together into a clean npm consumer. Backend/common/module CJS and ESM imports, frontend entry-point resolution, the response-planner demo, and the packaged AWS migration directory passed. Archive contents and internal dependency versions were checked before publication. Earlier 0.2.0 and 0.3.0 results below are historical records, not a claim of live-LLM validation for 0.4.0.
 
 The latest real Backstage host checks used packed artifacts with synthetic/demo data: navigation, alert selection, receipt and manual results, LLM suggestion display, pre-check tabs, both frontend systems' entity cards, search ordering and the template creation route. Provider protocol/error tests use mocks; no live OpenAI, Claude, or compatible-API quality evaluation is claimed.

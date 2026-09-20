@@ -1,0 +1,61 @@
+{
+  "verifiedAt": "2026-09-20T13:36:29.642Z",
+  "preparedCommit": "58668297c72f4dab45fb56f00126443b26906731",
+  "packages": [
+    {
+      "name": "@namayasai/backstage-plugin-jev-operations-support-common",
+      "version": "0.4.0",
+      "latestTag": "0.4.0",
+      "tarball": "https://registry.npmjs.org/@namayasai/backstage-plugin-jev-operations-support-common/-/backstage-plugin-jev-operations-support-common-0.4.0.tgz",
+      "integrity": "sha512-Cg3yRzZXvI6GhkFIOlLwAojxkuHOal8nfulk3aHNoOhhlHC6WSbsubtpaCoMFczELh5R/w+wpVHPkFj5Flk82w==",
+      "anonymousDownload": true,
+      "matchesReviewedArchive": true
+    },
+    {
+      "name": "@namayasai/backstage-plugin-jev-operations-support-backend",
+      "version": "0.4.0",
+      "latestTag": "0.4.0",
+      "tarball": "https://registry.npmjs.org/@namayasai/backstage-plugin-jev-operations-support-backend/-/backstage-plugin-jev-operations-support-backend-0.4.0.tgz",
+      "integrity": "sha512-vDnofezxcyha37E/Q07vMtfjx4xz04N79XVcXxzXXzqvhMx43cs/8rIa+9b0kSNNqcpBajf7R4QMl+NvhhN6/w==",
+      "anonymousDownload": true,
+      "matchesReviewedArchive": true
+    },
+    {
+      "name": "@namayasai/backstage-plugin-jev-operations-support",
+      "version": "0.4.0",
+      "latestTag": "0.4.0",
+      "tarball": "https://registry.npmjs.org/@namayasai/backstage-plugin-jev-operations-support/-/backstage-plugin-jev-operations-support-0.4.0.tgz",
+      "integrity": "sha512-im9hrRRLmxKz8S3KrGCrKUfUNp6wIPezODgrkr8hR9sqnmEy0FuyPJKRNn15zw9My7SRt3MsO7LCRHmrYAR0KQ==",
+      "anonymousDownload": true,
+      "matchesReviewedArchive": true
+    },
+    {
+      "name": "@namayasai/backstage-plugin-jev-operations-support-tech-insights",
+      "version": "0.4.0",
+      "latestTag": "0.4.0",
+      "tarball": "https://registry.npmjs.org/@namayasai/backstage-plugin-jev-operations-support-tech-insights/-/backstage-plugin-jev-operations-support-tech-insights-0.4.0.tgz",
+      "integrity": "sha512-bjB5j9NfzZup9wibbLtJx5iUEGIVtF+dG/OGSD2Wt9ZltAXRoxaANGVxFxQS3jv+e3WNDwtxuDjKzGOw0tZlZA==",
+      "anonymousDownload": true,
+      "matchesReviewedArchive": true
+    },
+    {
+      "name": "@namayasai/backstage-plugin-jev-operations-support-aws-notifications",
+      "version": "0.4.0",
+      "latestTag": "0.4.0",
+      "tarball": "https://registry.npmjs.org/@namayasai/backstage-plugin-jev-operations-support-aws-notifications/-/backstage-plugin-jev-operations-support-aws-notifications-0.4.0.tgz",
+      "integrity": "sha512-l07kPL3eePgP+SxcUapzcANA+qYjle0MeBIUTqcP1JVNaQ3o4QkAkGMGjlVpX3XXkzbaAX97eEyKG16zHDr6bw==",
+      "anonymousDownload": true,
+      "matchesReviewedArchive": true
+    }
+  ],
+  "registryConsumer": {
+    "versions": "all five packages at 0.4.0",
+    "packageSource": "public registry names; no file overrides",
+    "userConfig": "empty",
+    "installScripts": "disabled",
+    "cjsAndEsmBackendImports": true,
+    "frontendEntryPoints": true,
+    "responsePlannerExport": true,
+    "awsMigrationDirectory": true
+  }
+}
