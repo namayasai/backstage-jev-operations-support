@@ -1,5 +1,5 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -37,8 +37,8 @@
   },
   "configSchema": "config.d.ts",
   "dependencies": {
-    "@namayasai/backstage-plugin-jev-operations-support-backend": "0.3.0",
-    "@namayasai/backstage-plugin-jev-operations-support-common": "0.3.0",
+    "@namayasai/backstage-plugin-jev-operations-support-backend": "0.4.0",
+    "@namayasai/backstage-plugin-jev-operations-support-common": "0.4.0",
     "@backstage/backend-plugin-api": "^1.10.0",
     "@backstage/catalog-client": "^1.16.1",
     "@backstage/catalog-model": "^1.10.1",

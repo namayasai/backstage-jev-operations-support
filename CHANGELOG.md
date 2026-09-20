@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-09-20
 
 - Move manual incident reports into a dedicated Triage sidebar page. Add optional OpenAI, Claude, and OpenAI-compatible response suggestions after successful Jev incident assessment, including stored ALARM results. Keep Jev results available if suggestion generation fails. Name pre-check workflows by the task being checked.
 

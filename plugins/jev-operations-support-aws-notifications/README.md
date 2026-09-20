@@ -18,9 +18,9 @@ days; an alert without them stays visible.
 
 It requires the parent
 `@namayasai/backstage-plugin-jev-operations-support-backend` plugin at the same
-0.3.0 version, whose `/client` export it imports. Alert delivery is best effort:
+0.4.0 version, whose `/client` export it imports. Alert delivery is best effort:
 the standard SQS publisher and Events service cannot guarantee redelivery if
 Notifications storage fails. See
 [the AWS notifications guide](../../docs/aws-notifications.md).
 
-Apache-2.0. Experimental v0.3.0.
+Apache-2.0. Experimental v0.4.0.

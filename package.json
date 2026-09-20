@@ -1,6 +1,6 @@
 {
   "name": "backstage-jev-operations-support",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Six decision workflows for Backstage, powered by TypeSafe Jev",
   "license": "Apache-2.0",

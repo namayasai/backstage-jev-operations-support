@@ -1,5 +1,12 @@
 # Verification
 
+## Version 0.4.0 release verification
+
+The 0.4.0 release includes the dedicated Alerts, Triage and Pre-check pages, PR reporting, entity cards and optional OpenAI, Claude and compatible-API response planning. Release checks passed 865 tests across 26 files on Node.js 22, type checking, all five package builds, and the fixture demo build. All five 0.4.0 archives were then installed together into a clean npm consumer. Backend/common/module CJS and ESM imports, frontend entry-point resolution, the response-planner demo, and the packaged AWS migration directory passed. Archive contents and internal dependency versions were checked before publication. Earlier 0.2.0 and 0.3.0 results below are historical records, not a claim of live-LLM validation for 0.4.0.
+
+The latest real Backstage host checks used packed artifacts with synthetic/demo data: navigation, alert selection, receipt and manual results, LLM suggestion display, pre-check tabs, both frontend systems' entity cards, search ordering and the template creation route. Provider protocol/error tests use mocks; no live OpenAI, Claude, or compatible-API quality evaluation is claimed.
+
+
 The automated suite covers workflow contracts, malformed and contradictory provider responses, uncertainty handling, no-match decisions, risk polarity, result ordering, identity and permission checks, rate limits, provider failures, browser component interactions, catalog API adaptation, and entity navigation state.
 
 `npm run check` runs type checking, all tests, CommonJS/ESM/declaration builds for the five packages, and a production build of the fixture playground. A [GitHub Actions example](ci.example.yml) runs the same command on Node.js 22. It is not enabled in this repository because the publishing credential cannot create workflow files. To enable it, copy the example to `.github/workflows/ci.yml` using an account or token with workflow permissions.

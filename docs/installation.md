@@ -4,15 +4,15 @@ This release has been exercised on Backstage 1.55.0, Node.js 22.23.2, React 18, 
 
 ## Versions
 
-The current release is **0.3.0**, covering all five packages: the frontend, backend, and shared packages in section 1, and the two optional backend modules in section 5. Keep all installed packages on the same 0.3.0 line, because the optional modules import the backend's `/client` export.
+The current release is **0.4.0**, covering all five packages: the frontend, backend, and shared packages in section 1, and the two optional backend modules in section 5. Keep all installed packages on the same 0.4.0 line, because the optional modules import the backend's `/client` export.
 
 ## 1. Install packages
 
 The core packages are public on npm. From your Backstage root, add the frontend and backend packages:
 
 ```sh
-yarn --cwd packages/app add @namayasai/backstage-plugin-jev-operations-support@^0.3.0
-yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-backend@^0.3.0
+yarn --cwd packages/app add @namayasai/backstage-plugin-jev-operations-support@^0.4.0
+yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-backend@^0.4.0
 ```
 
 The shared `@namayasai/backstage-plugin-jev-operations-support-common` package is installed automatically. No custom tarball resolution is required. The host provides React 18, React DOM, and React Router 6.
@@ -20,11 +20,11 @@ The shared `@namayasai/backstage-plugin-jev-operations-support-common` package i
 For an npm-based workspace:
 
 ```sh
-npm install --workspace packages/app @namayasai/backstage-plugin-jev-operations-support@^0.3.0
-npm install --workspace packages/backend @namayasai/backstage-plugin-jev-operations-support-backend@^0.3.0
+npm install --workspace packages/app @namayasai/backstage-plugin-jev-operations-support@^0.4.0
+npm install --workspace packages/backend @namayasai/backstage-plugin-jev-operations-support-backend@^0.4.0
 ```
 
-Source and reproducible tarballs are also available from the [v0.3.0 release](https://github.com/namayasai/backstage-jev-operations-support/releases/tag/v0.3.0).
+Source and reproducible tarballs are also available from the [v0.4.0 release](https://github.com/namayasai/backstage-jev-operations-support/releases/tag/v0.4.0).
 
 ## 2. Register the backend
 
@@ -258,18 +258,18 @@ instead of the standard Notifications list. Both appear only when
 `jevOperationsSupport.awsNotifications` is configured; there is no extra setting
 for the table or its 30-day retention.
 
-The GitHub webhook is part of the backend package you already installed and needs only configuration. The Tech Insights and AWS modules are separate packages, published on npm at 0.3.0. Install the one you need by name, next to the 0.3.0 backend whose `/client` export it imports:
+The GitHub webhook is part of the backend package you already installed and needs only configuration. The Tech Insights and AWS modules are separate packages, published on npm at 0.4.0. Install the one you need by name, next to the 0.4.0 backend whose `/client` export it imports:
 
 ```sh
-yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-tech-insights@^0.3.0
-yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-aws-notifications@^0.3.0
+yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-tech-insights@^0.4.0
+yarn --cwd packages/backend add @namayasai/backstage-plugin-jev-operations-support-aws-notifications@^0.4.0
 ```
 
 For an npm-based workspace:
 
 ```sh
-npm install --workspace packages/backend @namayasai/backstage-plugin-jev-operations-support-tech-insights@^0.3.0
-npm install --workspace packages/backend @namayasai/backstage-plugin-jev-operations-support-aws-notifications@^0.3.0
+npm install --workspace packages/backend @namayasai/backstage-plugin-jev-operations-support-tech-insights@^0.4.0
+npm install --workspace packages/backend @namayasai/backstage-plugin-jev-operations-support-aws-notifications@^0.4.0
 ```
 
 The AWS alert inbox comes from the frontend package in section 1, so no extra frontend install is needed.
@@ -283,7 +283,7 @@ npm ci
 npm run pack:plugins
 ```
 
-That writes five `0.3.0` tarballs to `dist/packages`, which can be installed with `file:` paths. Whichever method you use, keep the modules, the backend, and the common package on the same 0.3.0 version.
+That writes five `0.4.0` tarballs to `dist/packages`, which can be installed with `file:` paths. Whichever method you use, keep the modules, the backend, and the common package on the same 0.4.0 version.
 
 ## API
 

@@ -2,9 +2,9 @@
 
 Six focused decision workflows for [Backstage](https://backstage.io), powered by [TypeSafe Jev](https://docs.typesafe.ai/introduction). Evaluate operational documentation, choose templates and teams, triage incidents, inspect changes, and rerank catalog candidates from one workbench.
 
-**Status: experimental. Current release 0.3.0, covering all five packages.** Version 0.2.0 was verified in a local Backstage 1.55.0 host with all six workflows calling the real Jev API, and 0.3.0 adds a separately recorded integration run. Includes an authenticated backend, legacy and new frontend extensions, a key-free fixture playground, and the opt-in integrations described below. Optional LLM response suggestions follow incident triage; no infrastructure actions are executed.
+**Status: experimental. Current release 0.4.0, covering all five packages.** Version 0.2.0 was verified in a local Backstage 1.55.0 host with all six workflows calling the real Jev API, and 0.3.0 adds a separately recorded integration run. Includes an authenticated backend, legacy and new frontend extensions, a key-free fixture playground, and the opt-in integrations described below. Optional LLM response suggestions follow incident triage; no infrastructure actions are executed.
 
-The sidebar redesign and optional LLM response suggestions in this branch are unreleased. Published npm packages remain at 0.3.0; see the [Unreleased changelog](CHANGELOG.md#unreleased).
+Version 0.4.0 adds separate Alerts, Triage and Pre-check pages, task-specific workflow tabs, scheduled entity cards, PR change review, and optional LLM response suggestions. See the [changelog](CHANGELOG.md).
 
 The following screenshots show the current source in a local Backstage host using synthetic data and fixed demo results. They demonstrate the interface, not live model accuracy.
 
@@ -52,9 +52,9 @@ The repository's `.npmrc` uses `legacy-peer-deps` because Backstage's optional t
 
 ## Install in Backstage
 
-See [the installation guide](docs/installation.md) for package installation, frontend registration, the entity tab, permissions, and configuration. All five packages are published on npm at 0.3.0: frontend, backend, shared, and the two optional backend modules. GitHub Release tarballs are also available. The shared package installs automatically with the frontend or backend. The [Plugin Directory submission](https://github.com/backstage/backstage/pull/35788) tracks the upstream review.
+See [the installation guide](docs/installation.md) for package installation, frontend registration, the entity tab, permissions, and configuration. All five packages are published on npm at 0.4.0: frontend, backend, shared, and the two optional backend modules. GitHub Release tarballs are also available. The shared package installs automatically with the frontend or backend. The [Plugin Directory submission](https://github.com/backstage/backstage/pull/35788) tracks the upstream review.
 
-The two optional backend modules are installed by name alongside the matching 0.3.0 backend, since they import its `/client` export; see [optional modules](docs/installation.md#5-optional-modules).
+The two optional backend modules are installed by name alongside the matching 0.4.0 backend, since they import its `/client` export; see [optional modules](docs/installation.md#5-optional-modules).
 
 Backend configuration:
 

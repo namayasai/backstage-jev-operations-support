@@ -1,6 +1,6 @@
 # Incident response suggestions
 
-This feature requires the unreleased source changes; it is not included in npm 0.3.0.
+Available in version 0.4.0 and later. Keep all Jev Operations Support packages on the same version.
 
 Jev classifies reported impact and an investigation area. An optional second LLM then reads the report and those Jev findings to propose hypotheses, verification steps and conditional response options. The UI keeps the two results separate. Suggestions never execute commands, change infrastructure, or establish a proven root cause.
 

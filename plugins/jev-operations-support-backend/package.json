@@ -1,5 +1,5 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -44,7 +44,7 @@
     "build": "tsup src/index.ts src/client.ts src/responsePlan.ts --format cjs --dts --clean"
   },
   "dependencies": {
-    "@namayasai/backstage-plugin-jev-operations-support-common": "0.3.0",
+    "@namayasai/backstage-plugin-jev-operations-support-common": "0.4.0",
     "@backstage/backend-plugin-api": "^1.10.1",
     "@backstage/plugin-permission-common": "^0.9.11",
     "express": "^4.21.2",

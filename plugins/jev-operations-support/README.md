@@ -16,4 +16,4 @@ Backstage backend. Search indexes commonly include content from private document
 can force this off for a given usage with `live={false}`, or leave it to each reader's own Live
 switch; the `jev-operations-support.evaluate` permission and the backend's rate limit still apply.
 
-Apache-2.0. Experimental v0.3.0.
+Apache-2.0. Experimental v0.4.0.

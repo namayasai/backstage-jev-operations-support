@@ -117,7 +117,7 @@ describe('AWS alert detail migration packaging', () => {
     const manifest = JSON.parse(readFileSync(join(dirname(directory), 'package.json'), 'utf8'));
     expect(manifest.files).toContain('migrations');
     expect(manifest.exports['./package.json']).toBe('./package.json');
-    expect(manifest.version).toBe('0.3.0');
+    expect(manifest.version).toBe('0.4.0');
   });
 
   it('is reversible', async () => {
