@@ -6,9 +6,19 @@ Six focused decision workflows for [Backstage](https://backstage.io), powered by
 
 The sidebar redesign and optional LLM response suggestions in this branch are unreleased. Published npm packages remain at 0.3.0; see the [Unreleased changelog](CHANGELOG.md#unreleased).
 
-![Jev Operations Support AWS alerts inbox inside Backstage 1.55.0, showing a synthetic CloudWatch fixture alarm](docs/backstage-workbench.png)
+The following screenshots show the current source in a local Backstage host using synthetic data and fixed demo results. They demonstrate the interface, not live model accuracy.
 
-![Readiness checks in the Pre-check (backend demo mode: illustrative results)](docs/backstage-result.png)
+**Alerts — received notifications with severity and a Jev summary.**
+
+![Alerts table with a synthetic CloudWatch alarm](docs/screenshots/alerts.png)
+
+**Triage — separate LLM response suggestions after incident assessment.**
+
+![Triage response suggestions using a clearly marked fixed demo](docs/screenshots/triage.png)
+
+**Pre-check — review a draft runbook before publishing or handing it over.**
+
+![Pre-check workflow tabs, runbook input, and illustrative findings](docs/screenshots/precheck.png)
 
 ## Workflows
 
