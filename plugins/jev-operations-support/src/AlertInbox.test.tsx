@@ -3,6 +3,7 @@ import { cleanup, render, screen, fireEvent, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { awsAlertOwnerErrorCodes, demoEvaluation, type Candidate, type EvaluationRequest, type EvaluationResult } from '@namayasai/backstage-plugin-jev-operations-support-common';
 import { AlertInbox, ownerErrorMessages, parseAlertNotificationPage } from './AlertInbox';
+import { ReportTriage } from './ReportTriage';
 import { resetLivePreferenceForTests, type EvaluateOptions } from './useLiveEvaluation';
 
 beforeEach(() => { window.localStorage.clear(); resetLivePreferenceForTests(); });
@@ -271,27 +272,13 @@ describe('AWS alert inbox', () => {
     expect(screen.queryByText('Not assessed by Jev')).toBeNull();
   });
 
-  it('triages a pasted report in the same place, without losing the alert list', async () => {
-    window.localStorage.setItem('jev-operations-support.live', 'on');
-    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
-    render(<AlertInbox loadNotifications={async () => page()} evaluate={evaluate} pollMs={0} liveDelayMs={5} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Triage a report' }));
-    expect(screen.queryByRole('article', { name: 'AWS alert details' })).toBeNull();
-    fireEvent.change(screen.getByLabelText('Report'), { target: { value: 'Customers report that login fails since noon.' } });
-    await screen.findByText('Up to date');
-    expect(evaluate.mock.calls[0][0]).toMatchObject({ workflow: 'incident', text: 'Customers report that login fails since noon.' });
-    fireEvent.click(screen.getByRole('button', { name: /checkout-high-errors/ }));
-    expect(screen.getByRole('article', { name: 'AWS alert details' })).toBeTruthy();
-  });
-
-  it('does not auto-assess an unassessed alert while the report pane is open', async () => {
+  it('does not auto-assess a default selection before the reader opens it', async () => {
     window.localStorage.setItem('jev-operations-support.live', 'on');
     const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
     const parsed = twoAlerts();
     // Put the unassessed alert first, so it is the default selection while the report pane opens.
     const reversed = { ...parsed, notifications: [...parsed.notifications].reverse() };
-    render(<AlertInbox loadNotifications={async () => reversed} evaluate={evaluate} pollMs={0} liveDelayMs={5} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' }));
+    render(<AlertInbox loadNotifications={async () => reversed} evaluate={evaluate} pollMs={0} />);
     await screen.findAllByText('identity-high-errors');
     expect(evaluate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
@@ -325,32 +312,6 @@ describe('AWS alert inbox', () => {
     expect(screen.getByText('No AWS alerts were returned.')).toBeTruthy();
   });
 
-  it('report triage sends nothing with untouched storage (Live defaults to off), until Check now', async () => {
-    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
-    render(<AlertInbox loadNotifications={async () => page()} evaluate={evaluate} pollMs={0} liveDelayMs={5} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Triage a report' }));
-    expect((screen.getByRole('checkbox', { name: 'Live check' }) as HTMLInputElement).checked).toBe(false);
-    fireEvent.change(screen.getByLabelText('Report'), { target: { value: 'Customers cannot log in since noon.' } });
-    await new Promise(resolve => setTimeout(resolve, 30));
-    expect(evaluate).not.toHaveBeenCalled();
-    expect(screen.getByText(/Live check is off/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
-    await screen.findByText('Up to date');
-    expect(evaluate).toHaveBeenCalledTimes(1);
-  });
-
-  it('cancels a pending report send when the report pane is hidden within the quiet period', async () => {
-    window.localStorage.setItem('jev-operations-support.live', 'on');
-    const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
-    render(<AlertInbox loadNotifications={async () => page()} evaluate={evaluate} pollMs={0} liveDelayMs={30} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Triage a report' }));
-    fireEvent.change(screen.getByLabelText('Report'), { target: { value: 'Customers cannot log in since noon.' } });
-    // Selecting an alert closes the report pane before the quiet period elapses.
-    fireEvent.click(screen.getByRole('button', { name: /checkout-high-errors/ }));
-    await new Promise(resolve => setTimeout(resolve, 60));
-    expect(evaluate).not.toHaveBeenCalled();
-  });
-
   it('does not auto-assess the same alert again after a refresh', async () => {
     window.localStorage.setItem('jev-operations-support.live', 'on');
     const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
@@ -367,9 +328,8 @@ describe('AWS alert inbox', () => {
 
   it('does not auto-assess an alert while Live is off (the default, untouched)', async () => {
     const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
-    render(<AlertInbox loadNotifications={async () => twoAlerts()} evaluate={evaluate} pollMs={0} />);
+    render(<><AlertInbox loadNotifications={async () => twoAlerts()} evaluate={evaluate} pollMs={0} /><ReportTriage evaluate={evaluate} /></>);
     await screen.findAllByText('checkout-high-errors');
-    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' }));
     expect((screen.getByRole('checkbox', { name: 'Live check' }) as HTMLInputElement).checked).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
     await new Promise(resolve => setTimeout(resolve, 30));
@@ -378,14 +338,11 @@ describe('AWS alert inbox', () => {
 
   it('does not auto-assess an alert that was clicked while Live was off, even once Live is turned on afterwards', async () => {
     const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
-    render(<AlertInbox loadNotifications={async () => twoAlerts()} evaluate={evaluate} pollMs={0} />);
+    render(<><AlertInbox loadNotifications={async () => twoAlerts()} evaluate={evaluate} pollMs={0} /><ReportTriage evaluate={evaluate} /></>);
     await screen.findAllByText('checkout-high-errors');
-    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' }));
-    // Live is off by default, untouched; the click itself expressed no intent. The row's own
-    // click closes the report pane, so the checkbox is not on screen while this happens.
+    // Toggling the shared preference later must not turn an earlier click into consent.
     expect((screen.getByRole('checkbox', { name: 'Live check' }) as HTMLInputElement).checked).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Live check' }));
     await new Promise(resolve => setTimeout(resolve, 30));
     expect(evaluate).not.toHaveBeenCalled();
@@ -405,11 +362,9 @@ describe('AWS alert inbox', () => {
 
   it('auto-assesses an unassessed alert opened after the reader turns Live on', async () => {
     const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
-    render(<AlertInbox loadNotifications={async () => twoAlerts()} evaluate={evaluate} pollMs={0} />);
+    render(<><AlertInbox loadNotifications={async () => twoAlerts()} evaluate={evaluate} pollMs={0} /><ReportTriage evaluate={evaluate} /></>);
     await screen.findAllByText('checkout-high-errors');
-    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Live check' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' })); // close the report pane
     fireEvent.click(screen.getByRole('button', { name: /identity-high-errors/ }));
     await waitFor(() => expect(evaluate).toHaveBeenCalledTimes(1));
     expect(evaluate.mock.calls[0][0]).toMatchObject({ workflow: 'incident', text: 'Identity logins fail for customers.' });
@@ -488,16 +443,7 @@ describe('AWS alert inbox', () => {
     expect(loadNotifications).toHaveBeenCalledTimes(callsAfterInitial);
   });
 
-  it('exposes the report triage pane\'s "off" explanation to assistive tech, not just a title attribute', async () => {
-    render(<AlertInbox loadNotifications={async () => page()} evaluate={vi.fn()} live={false} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Triage a report' }));
-    const toggle = screen.getByRole('checkbox', { name: 'Live check' }) as HTMLInputElement;
-    expect(toggle.disabled).toBe(true);
-    // The explanation must be reachable by keyboard/screen reader, not just a `title` attribute.
-    const describedById = toggle.getAttribute('aria-describedby');
-    expect(describedById).toBeTruthy();
-    expect(document.getElementById(describedById!)?.textContent).toMatch(/Automatic checks are turned off for this view/);
-  });
+
 });
 
 describe('AWS alert inbox: owner suggestion made at receipt', () => {

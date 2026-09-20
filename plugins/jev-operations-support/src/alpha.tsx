@@ -3,6 +3,7 @@ import { EntityCardBlueprint, EntityContentBlueprint } from '@backstage/plugin-c
 
 const rootRouteRef = createRouteRef();
 const alertsRouteRef = createRouteRef();
+const triageRouteRef = createRouteRef();
 const jevPage = PageBlueprint.make({
   params: {
     path: '/jev-operations-support',
@@ -19,6 +20,15 @@ const jevAlertsPage = PageBlueprint.make({
     path: '/jev-alerts', routeRef: alertsRouteRef, title: 'Alerts',
     icon: <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true"><path d="M12 3 2 21h20L12 3Z" stroke="currentColor" strokeWidth="2"/><path d="M12 9v5m0 3v1" stroke="currentColor" strokeWidth="2"/></svg>,
     loader: () => import('./BackstagePage').then(m => <m.JevPage page="alerts" />),
+  },
+});
+
+const jevTriagePage = PageBlueprint.make({
+  name: 'triage',
+  params: {
+    path: '/jev-triage', routeRef: triageRouteRef, title: 'Triage',
+    icon: <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z" stroke="currentColor" strokeWidth="2"/><path d="M8 8h8M8 12h5" stroke="currentColor" strokeWidth="2"/></svg>,
+    loader: () => import('./BackstagePage').then(m => <m.JevPage page="triage" />),
   },
 });
 
@@ -54,6 +64,6 @@ const jevOwnerSuggestionCard = EntityCardBlueprint.make({
 
 export default createFrontendPlugin({
   pluginId: 'jev-operations-support',
-  routes: { root: rootRouteRef, alerts: alertsRouteRef },
-  extensions: [jevAlertsPage, jevPage, jevEntityContent, jevReadinessCard, jevOwnerSuggestionCard],
+  routes: { root: rootRouteRef, alerts: alertsRouteRef, triage: triageRouteRef },
+  extensions: [jevAlertsPage, jevTriagePage, jevPage, jevEntityContent, jevReadinessCard, jevOwnerSuggestionCard],
 });

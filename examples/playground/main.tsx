@@ -4,6 +4,7 @@ import { Box, CssBaseline, Tab, Tabs, Typography, useMediaQuery } from '@materia
 import { UnifiedThemeProvider, themes } from '@backstage/theme';
 import { demoEvaluation, sampleText, type EvaluationRequest } from '../../plugins/jev-operations-support-common/src';
 import { JevWorkbench } from '../../plugins/jev-operations-support/src/Workbench';
+import { ReportTriage } from '../../plugins/jev-operations-support/src/ReportTriage';
 import { AlertInbox, parseAlertNotificationPage } from '../../plugins/jev-operations-support/src/AlertInbox';
 
 const evaluate = async (input: EvaluationRequest) => demoEvaluation(input);
@@ -43,9 +44,11 @@ function Playground() {
       <Typography variant="overline" color="textSecondary">Jev Operations Support · demo data</Typography>
       <Tabs value={view} indicatorColor="primary" textColor="primary" onChange={(_, next) => setView(next)} style={{ marginBottom: 24 }}>
         <Tab value="alerts" label="Alerts" id="jev-tab-alerts" aria-controls="jev-tabpanel-alerts" />
+        <Tab value="triage" label="Triage" id="jev-tab-triage" aria-controls="jev-tabpanel-triage" />
         <Tab value="playground" label="Pre-check" id="jev-tab-playground" aria-controls="jev-tabpanel-playground" />
       </Tabs>
       <div hidden={view !== 'alerts'} role="tabpanel" id="jev-tabpanel-alerts" aria-labelledby="jev-tab-alerts"><AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} pollMs={0} active={view === 'alerts'} /></div>
+      <div hidden={view !== 'triage'} role="tabpanel" id="jev-tabpanel-triage" aria-labelledby="jev-tab-triage"><ReportTriage evaluate={evaluate} active={view === 'triage'} /></div>
       <div hidden={view !== 'playground'} role="tabpanel" id="jev-tabpanel-playground" aria-labelledby="jev-tab-playground"><JevWorkbench demo evaluate={evaluate} workflowIds={['readiness', 'change-risk', 'templates', 'ownership', 'search']} initialText={sampleText.readiness} active={view === 'playground'} /></div>
     </Box>
   </UnifiedThemeProvider>;

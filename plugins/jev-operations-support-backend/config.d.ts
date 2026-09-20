@@ -12,6 +12,25 @@ export interface Config {
     timeoutMs?: number;
     /** Per-user rate limit per process, 1–120. @visibility backend */
     requestsPerMinute?: number;
+    /** Optional second-stage LLM response suggestions. @visibility backend */
+    responsePlanning?: {
+      /** Enable LLM response suggestions after incident triage. Defaults to false. @visibility backend */
+      enabled?: boolean;
+      /** API protocol. Defaults to openai. @visibility backend */
+      provider?: 'openai' | 'anthropic' | 'openai-compatible';
+      /** Required model ID supported by your provider. @visibility backend */
+      model?: string;
+      /** Separate LLM API key, never the Jev key. @visibility secret */
+      apiKey?: string;
+      /** API base including /v1, only for openai-compatible. @visibility backend */
+      baseUrl?: string;
+      /** 1000–60000 ms; defaults to 30000. @visibility backend */
+      timeoutMs?: number;
+      /** 256–8192 output tokens; defaults to 4096. @visibility backend */
+      maxOutputTokens?: number;
+      /** json_object is available for compatible APIs without JSON Schema support. @visibility backend */
+      responseFormat?: 'json_schema' | 'json_object';
+    };
     /** Pull request webhook integration. Both secrets and explicit filters are required; omitted means disabled. */
     githubWebhook?: {
       /** GitHub webhook HMAC secret. @visibility secret */

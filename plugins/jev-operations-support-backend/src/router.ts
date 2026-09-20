@@ -1,3 +1,4 @@
+import { attachResponsePlan, type ResponsePlanner } from './responsePlan';
 import crypto from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import express from 'express';
@@ -116,6 +117,7 @@ export interface RouterOptions {
   permissions: Pick<PermissionsService, 'authorize'>;
   evaluate?: (request: JevRequest, signal?: AbortSignal) => Promise<JevResponse>;
   demoMode?: boolean;
+  responsePlanner?: ResponsePlanner;
   confidenceThreshold?: number;
   requestsPerMinute?: number;
   githubWebhook?: GitHubWebhookRouterOptions;
@@ -482,6 +484,7 @@ export function createRouter(options: RouterOptions): express.Router {
   router.get('/status', (_req, res) => res.json({
     mode: options.demoMode ? 'demo' : 'live',
     configured: Boolean(options.demoMode || options.evaluate),
+    responsePlanning: options.responsePlanner?.provider ?? 'disabled',
     // Deliberately no repository names or content: only shape-of-the-system facts an operator needs. This
     // includes `changeReview` (enabled/disabled) and its own last outcome code/time — never a path, title, diff
     // excerpt, or finding, matching `changeReview.ts`'s own log-observability rule.
@@ -509,14 +512,18 @@ export function createRouter(options: RouterOptions): express.Router {
         res.setHeader('Retry-After', '60'); res.status(429).json({ error: 'Too many evaluations. Wait a minute before retrying.' }); return;
       }
       bucket.count++; buckets.set(key, bucket);
-      if (options.demoMode) { res.json(demoEvaluation(parsed.data)); return; }
+      if (options.demoMode) { res.json(await attachResponsePlan(parsed.data.text, demoEvaluation(parsed.data), options.responsePlanner)); return; }
       if (!options.evaluate) { res.status(503).json({ error: 'Jev is not configured. Set jevOperationsSupport.apiKey in the backend.' }); return; }
       inFlight++;
+      const controller = new AbortController();
+      const disconnected = () => { if (!res.writableEnded) controller.abort(); };
+      res.once('close', disconnected);
       try {
         const { request, checks } = buildEvaluation(parsed.data);
-        const response = await options.evaluate(request);
-        res.json(summarize(parsed.data, response, checks, options.confidenceThreshold));
-      } finally { inFlight--; }
+        const response = await options.evaluate(request, controller.signal);
+        const result = summarize(parsed.data, response, checks, options.confidenceThreshold);
+        res.json(await attachResponsePlan(parsed.data.text, result, options.responsePlanner, controller.signal));
+      } finally { res.removeListener('close', disconnected); inFlight--; }
     } catch (error) {
       if (error instanceof ProviderError) { res.status(error.status).json({ error: error.message }); return; }
       next(error);

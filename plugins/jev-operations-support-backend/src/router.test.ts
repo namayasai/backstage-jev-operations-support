@@ -1160,3 +1160,36 @@ describe('GitHub webhook change review (opt-in, requires report != none)', () =>
 
 });
 });
+
+describe('incident response suggestions', () => {
+  const incident = { workflow: 'incident', text: 'Customers report login failures after release.', candidates: [] };
+  const evaluate = async (request: JevRequest): Promise<JevResponse> => ({ model: 'test', answers: Object.fromEntries(Object.entries(request.questions).map(([id, question]) => {
+    const keys = Object.keys(question.criteria);
+    return [id, { type: 'choice', choice: keys[0], confidence: 0.9, probabilities: Object.fromEntries(keys.map((key, i) => [key, i ? 0 : 1])) }];
+  })) as JevResponse['answers'] });
+  it('runs the planner after Jev and preserves the findings when planning fails', async () => {
+    const generate = vi.fn().mockRejectedValue(new Error('PRIVATE PROVIDER ERROR'));
+    const { app } = setup({ demoMode: false, evaluate, responsePlanner: { provider: 'openai', model: 'configured', generate } });
+    const result = await supertest(app).post('/evaluate').send(incident).expect(200);
+    expect(result.body.findings).toHaveLength(2);
+    expect(result.body.responsePlan).toEqual({ status: 'failed', provider: 'openai', model: 'configured', code: 'unavailable' });
+    expect(JSON.stringify(result.body)).not.toContain('PRIVATE');
+    expect(generate).toHaveBeenCalledWith(incident.text, expect.objectContaining({ workflow: 'incident', mode: 'live' }), expect.any(AbortSignal));
+  });
+  it('does not send to a live planner in demo mode', async () => {
+    const generate = vi.fn();
+    const { app } = setup({ responsePlanner: { provider: 'anthropic', model: 'configured', generate } });
+    await supertest(app).post('/evaluate').send(incident).expect(200);
+    expect(generate).not.toHaveBeenCalled();
+  });
+  it('does not invoke the planner for other workflows or unauthorized input', async () => {
+    const generate = vi.fn();
+    const planner = { provider: 'openai' as const, model: 'configured', generate };
+    const { app } = setup({ demoMode: false, evaluate: async () => readinessResponse(), responsePlanner: planner });
+    await supertest(app).post('/evaluate').send(body).expect(200);
+    await supertest(app).post('/evaluate').send({ ...incident, text: '' }).expect(400);
+    const denied = setup({ demoMode: false, evaluate, responsePlanner: planner, permissions: { authorize: vi.fn().mockResolvedValue([{ result: AuthorizeResult.DENY }]) } });
+    await supertest(denied.app).post('/evaluate').send(incident).expect(403);
+    expect(generate).not.toHaveBeenCalled();
+  });
+});

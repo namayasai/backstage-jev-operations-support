@@ -21,6 +21,9 @@
       ],
       "@namayasai/backstage-plugin-jev-operations-support-backend/client": [
         "plugins/jev-operations-support-backend/src/client.ts"
+      ],
+      "@namayasai/backstage-plugin-jev-operations-support-backend/response-plan": [
+        "plugins/jev-operations-support-backend/src/responsePlan.ts"
       ]
     }
   },

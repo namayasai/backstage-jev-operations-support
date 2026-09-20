@@ -1,3 +1,4 @@
+import { attachResponsePlan, responsePlannerFromConfig, type ResponsePlanner } from '@namayasai/backstage-plugin-jev-operations-support-backend/response-plan';
 import { coreServices, createBackendModule, type AuthService, type LoggerService } from '@backstage/backend-plugin-api';
 import type { Config, JsonValue } from '@backstage/config';
 import { parseEntityRef, stringifyEntityRef } from '@backstage/catalog-model';
@@ -515,6 +516,7 @@ export type AwsAlertEventHandlerOptions = {
   logger: Pick<LoggerService, 'warn' | 'error'>;
   evaluate?: Evaluate;
   maxConcurrent?: number;
+  responsePlanner?: ResponsePlanner;
   /** Recorded when no evaluator was supplied, so the alert states why rather than guessing. */
   notEvaluatedReason?: AwsAlertNotEvaluatedReason;
   /** Supplies catalog Group candidates for the owner suggestion call, when enabled. */
@@ -628,6 +630,14 @@ export function createAwsAlertEventHandler(options: AwsAlertEventHandlerOptions)
         // Provider failures arrive here as a `failed` detail, so the outcome is stored
         // either way and the notification itself is never rewritten.
         const finalDetails = preserveEvaluatedOwner(alertDetails(parsed, evaluated), existingDetails);
+        if (!settings.demoMode && parsed.alarm.NewStateValue === 'ALARM' && evaluated.status === 'evaluated' && evaluated.result && options.responsePlanner) {
+          const result = evaluated.result as unknown as EvaluationResult;
+          finalDetails.result = serializableResult({ ...result, responsePlan: { status: 'pending', provider: options.responsePlanner.provider, model: options.responsePlanner.model } });
+          // Persist Jev's result before waiting for the second provider. A planning failure must not hide it.
+          try { await saveDetails(record.scope, finalDetails); }
+          catch { logger.warn('Could not store the intermediate response-planning state'); }
+          finalDetails.result = serializableResult(await attachResponsePlan(evaluated.context, result, options.responsePlanner));
+        }
         await saveDetails(record.scope, finalDetails);
       }
     } catch {
@@ -799,6 +809,7 @@ export const awsNotificationsModule = createBackendModule({
           return;
         }
 
+        const responsePlanner = responsePlannerFromConfig(config);
         const apiKey = config.getOptionalString('jevOperationsSupport.apiKey');
         // Demo mode is a whole-installation statement that no real evaluation happens. A key
         // that is present anyway must not turn a received alert into a live provider call, and
@@ -834,6 +845,7 @@ export const awsNotificationsModule = createBackendModule({
             readDetails: settings.ownerSuggestion.enabled ? scope => store.read([scope]).then(rows => rows.get(scope)?.details) : undefined,
             evaluate: client?.evaluate,
             notEvaluatedReason: disabledReason,
+            responsePlanner,
             loadGroups,
           }),
         });

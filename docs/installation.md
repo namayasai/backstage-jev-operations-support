@@ -68,7 +68,7 @@ const app = createApp({
 });
 ```
 
-This adds separate **Alerts** (`/jev-alerts`) and **Pre-check** (`/jev-operations-support`) sidebar pages, plus an **Operations Support** entity tab. Preserve the app's existing catalog frontend feature, Catalog API, and route bindings. If your feature discovery already installs this plugin, use one registration mechanism rather than installing it twice.
+This adds separate **Alerts** (`/jev-alerts`), **Triage** (`/jev-triage`), and **Pre-check** (`/jev-operations-support`) sidebar pages, plus an **Operations Support** entity tab. Preserve the app's existing catalog frontend feature, Catalog API, and route bindings. If your feature discovery already installs this plugin, use one registration mechanism rather than installing it twice.
 
 `jevPlugin` also registers two read-only entity cards, `EntityCardBlueprint` extensions with the full ids `entity-card:jev-operations-support/readiness` and `entity-card:jev-operations-support/owner-suggestion` (each with its own `filter`: the readiness card to `Component`, matching its default `targetKinds`; the owner card to `Component`/`API`/`Resource`/`System`, matching the owner-suggestion retriever's default `kinds`). If your app disables or reconfigures them, use these full ids. They read the latest result the optional Tech Insights module (section 5) already computed on its own schedule; they never call `/evaluate` themselves. Both are silent (no error styling) when the Tech Insights module is not installed.
 
@@ -79,16 +79,18 @@ This adds separate **Alerts** (`/jev-alerts`) and **Pre-check** (`/jev-operation
 In `packages/app/src/App.tsx`, add the page inside your existing `FlatRoutes`:
 
 ```tsx
-import { JevPage, JevAlertsPage } from '@namayasai/backstage-plugin-jev-operations-support';
+import { JevPage, JevAlertsPage, JevTriagePage } from '@namayasai/backstage-plugin-jev-operations-support';
 
 <Route path="/jev-operations-support" element={<JevPage />} />
 <Route path="/jev-alerts" element={<JevAlertsPage />} />
+<Route path="/jev-triage" element={<JevTriagePage />} />
 ```
 
 Add a navigation item to your existing sidebar using your preferred icon:
 
 ```tsx
 <SidebarItem icon={YourAlertIcon} to="jev-alerts" text="Alerts" />
+<SidebarItem icon={YourReportIcon} to="jev-triage" text="Triage" />
 <SidebarItem icon={YourIcon} to="jev-operations-support" text="Pre-check" />
 ```
 
@@ -302,3 +304,7 @@ For `templates`, `ownership`, or `search`, supply 1–20 candidates with `id`, `
 `GET /api/jev-operations-support/aws-alerts?limit=20&offset=0` exists only when the optional AWS module is installed and configured. It requires a signed-in user (service tokens are refused), returns that user's own `jev-aws-alerts` notifications read from the Notifications backend on their behalf, and restores the stored alarm context and Jev result into `payload.metadata.jevOperationsSupport`. `limit` is 1–50 and `offset` is 0–10000; out-of-range values return 400. When the module is absent the route returns 404 and the inbox shows a setup hint. See [aws-notifications.md](aws-notifications.md).
 
 Errors: 400 invalid input; 401 not signed in; 403 permission denied; 413 oversized body; 429 local rate/concurrency limit; 502 invalid/unreachable provider; 503 unconfigured or overloaded provider. Provider errors never echo the provider response body. The client makes no automatic retry; wait before retrying rate-limited requests.
+
+## Optional response-planning LLM
+
+After incident triage, generate response options with OpenAI, Claude, or an OpenAI-compatible API. Configure the separate server-side key and model as described in [Incident response suggestions](response-planning.md).

@@ -2,6 +2,7 @@ import { coreServices, createBackendPlugin } from '@backstage/backend-plugin-api
 import { jevEvaluatePermission } from '@namayasai/backstage-plugin-jev-operations-support-common';
 import { createJevClient } from './client';
 import { resolveGitHubWebhookConfig } from './config';
+import { responsePlannerFromConfig } from './responsePlan';
 import { createRouter } from './router';
 
 export const jevPlugin = createBackendPlugin({
@@ -22,10 +23,11 @@ export const jevPlugin = createBackendPlugin({
         if (!Number.isInteger(requestsPerMinute) || requestsPerMinute < 1 || requestsPerMinute > 120) throw new Error('jevOperationsSupport.requestsPerMinute must be an integer between 1 and 120');
         const client = apiKey ? createJevClient({ apiKey, model: config.getOptionalString('jevOperationsSupport.model') ?? 'jev-1.13.0', timeoutMs }) : undefined;
         const githubWebhook = resolveGitHubWebhookConfig(config);
+        const responsePlanner = responsePlannerFromConfig(config);
         permissionsRegistry.addPermissions([jevEvaluatePermission]);
         if (githubWebhook) httpRouter.addAuthPolicy({ path: '/webhooks/github', allow: 'unauthenticated' });
         const baseUrl = config.getOptionalString('app.baseUrl');
-        httpRouter.use(createRouter({ httpAuth, permissions, evaluate: client?.evaluate, demoMode, confidenceThreshold: threshold, requestsPerMinute, githubWebhook, baseUrl }));
+        httpRouter.use(createRouter({ httpAuth, permissions, evaluate: client?.evaluate, demoMode, confidenceThreshold: threshold, requestsPerMinute, githubWebhook, baseUrl, responsePlanner }));
       },
     });
   },

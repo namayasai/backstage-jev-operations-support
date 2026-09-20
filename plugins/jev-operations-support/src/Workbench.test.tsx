@@ -61,7 +61,7 @@ describe('decision workbench', () => {
   it('loads and evaluates a template shortlist', async () => {
     const evaluate = vi.fn(async input => demoEvaluation(input));
     render(<JevWorkbench demo live={false} evaluate={evaluate} />);
-    fireEvent.click(screen.getByRole('tab', { name: /Template advisor/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Template selection/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Run pre-check' }));
     await screen.findByText(/Up to date/);
     expect(evaluate.mock.calls[0][0].candidates).toHaveLength(2);

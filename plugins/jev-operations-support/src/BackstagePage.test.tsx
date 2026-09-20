@@ -28,7 +28,7 @@ describe('Backstage integration adapters', () => {
     mocks.fetch.mockImplementation(async (url, init) => String(url).includes('/aws-alerts?') ? new Response('{}', { status: 404 }) : new Response(JSON.stringify(demoEvaluation(JSON.parse(init.body)))));
     render(<MemoryRouter><JevPage /></MemoryRouter>);
     fireEvent.click(screen.getByRole('tab', { name: 'Pre-check' }));
-    fireEvent.click(screen.getByRole('tab', { name: /Template advisor/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Template selection/ }));
     fireEvent.change(screen.getByLabelText('Service requirements'), { target: { value: 'Create a Node.js service with Postgres' } });
     fireEvent.change(screen.getByLabelText('Catalog filter'), { target: { value: 'Node' } });
     fireEvent.click(await screen.findByRole('button', { name: 'Load from catalog' }));
@@ -57,6 +57,20 @@ describe('Backstage integration adapters', () => {
     expect(screen.getByRole('tablist', { name: 'Decision workflows' })).toBeTruthy();
     expect(screen.queryByRole('tab', { name: 'Incident triage' })).toBeNull();
     expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it('the standalone Triage page evaluates a report without loading AWS alerts or the catalog', async () => {
+    mocks.fetch.mockImplementation(async (_url, init) => new Response(JSON.stringify(demoEvaluation(JSON.parse(init.body)))));
+    render(<MemoryRouter><JevPage page="triage" /></MemoryRouter>);
+    expect(screen.getByRole('heading', { name: 'Check an incident report' })).toBeTruthy();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.query).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Report'), { target: { value: 'Customers report login failures after the release.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Check now' }));
+    await screen.findByText('Up to date');
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    expect(mocks.fetch.mock.calls[0][0]).toMatch(/\/evaluate$/);
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body).workflow).toBe('incident');
   });
 
   it('drops the old text and results when the catalog entity changes', async () => {
@@ -115,17 +129,13 @@ describe('Backstage integration adapters', () => {
     // The authenticated module endpoint, not the standard Notifications list.
     expect(String(mocks.fetch.mock.calls[0][0])).toBe('https://backstage.example/api/jev-operations-support/aws-alerts?limit=20&offset=0');
     expect(mocks.discovery).not.toHaveBeenCalledWith('notifications');
-    // Start a report in the inbox before leaving it; a remount would discard this draft text.
-    fireEvent.click(screen.getByRole('button', { name: 'Triage a report' }));
-    fireEvent.change(screen.getByLabelText('Report'), { target: { value: 'Customers cannot check out.' } });
+    expect(screen.queryByRole('button', { name: 'Triage a report' })).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: 'Pre-check' }));
     await screen.findByLabelText('Runbook or operating procedure');
     // Returning to the inbox does not reload it: the view stayed mounted.
     fireEvent.click(screen.getByRole('tab', { name: 'Alerts' }));
     expect(mocks.fetch.mock.calls.filter(([url]) => String(url).includes('/aws-alerts?'))).toHaveLength(1);
-    // The half-written report, and the pane showing it, both survived the round trip.
-    expect(screen.getByRole('article', { name: 'Report triage' })).toBeTruthy();
-    expect((screen.getByLabelText('Report') as HTMLTextAreaElement).value).toBe('Customers cannot check out.');
+
   });
 
   it('sends nothing from the playground while live check is off', async () => {

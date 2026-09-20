@@ -1039,3 +1039,38 @@ describe('createOwnerGroupLoader', () => {
     await expect(loader()).rejects.toThrow(/timed out/);
   });
 });
+
+describe('AWS incident response planning', () => {
+  it('stores Jev before the planner finishes and keeps it when the planner fails', async () => {
+    const snapshots: JevAwsAlertDetails[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const generate = vi.fn(async () => { await gate; throw new Error('PRIVATE'); });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const handler = createAwsAlertEventHandler({ settings: settings(), logger: logger(), send,
+      saveDetails: async (_scope, detail) => { snapshots.push(JSON.parse(JSON.stringify(detail))); },
+      evaluate: async request => evaluate(request),
+      responsePlanner: { provider: 'anthropic', model: 'configured', generate },
+    });
+    const pending = handler(event());
+    try {
+      await waitForReal(() => expect(generate).toHaveBeenCalledTimes(1));
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(snapshots.at(-1)).toMatchObject({ evaluationStatus: 'evaluated', result: { workflow: 'incident', responsePlan: { status: 'pending' } } });
+    } finally { release(); }
+    await pending;
+    expect(snapshots.at(-1)).toMatchObject({ evaluationStatus: 'evaluated', result: { workflow: 'incident', responsePlan: { status: 'failed', code: 'unavailable' } } });
+    expect(JSON.stringify(snapshots)).not.toContain('PRIVATE');
+  });
+  it('skips planning for recovered alarms, demo mode and a failed Jev evaluation', async () => {
+    const generate = vi.fn();
+    for (const scenario of ['recovered', 'demo', 'failed']) {
+      const handler = createAwsAlertEventHandler({ settings: settings({ demoMode: scenario === 'demo' }), logger: logger(), send: vi.fn().mockResolvedValue(undefined), saveDetails: vi.fn().mockResolvedValue(undefined),
+        evaluate: scenario === 'failed' ? vi.fn().mockRejectedValue(new Error('failed')) : async request => evaluate(request),
+        responsePlanner: { provider: 'openai', model: 'configured', generate },
+      });
+      await handler(event(scenario === 'recovered' ? 'OK' : 'ALARM'));
+    }
+    expect(generate).not.toHaveBeenCalled();
+  });
+});

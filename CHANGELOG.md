@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Move manual incident reports into a dedicated Triage sidebar page. Add optional OpenAI, Claude, and OpenAI-compatible response suggestions after successful Jev incident assessment, including stored ALARM results. Keep Jev results available if suggestion generation fails. Name pre-check workflows by the task being checked.
+
 - Position the manual workflow page as Pre-check: explain when to use each workflow before a PR, handover or service creation, name inputs by their purpose, and label the action and results as a pre-check.
 
 - Add a dedicated Alerts sidebar page with Type, notification Severity, Log and Jev quick-check columns. Open details on row selection, keep Refresh visible, and use workflow tabs in the separate Playground page.

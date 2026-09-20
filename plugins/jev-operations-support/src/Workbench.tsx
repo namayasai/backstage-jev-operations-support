@@ -39,11 +39,11 @@ const templateExamples: Candidate[] = [
 
 // The same evaluations used by automated integrations, applied before a human action.
 const precheckCopy: Record<WorkflowId, { inputLabel: string; purpose: string; candidateLabel?: string; title?: string }> = {
-  readiness: { inputLabel: 'Runbook or operating procedure', purpose: 'Before publishing a runbook or handing over a service, check that startup, health verification, rollback, and escalation steps are documented.' },
-  'change-risk': { inputLabel: 'Proposed change and rollout plan', purpose: 'Before opening a pull request or reviewing a rollout, check for compatibility, data migration, and access-control concerns, plus a documented rollback.' },
-  ownership: { inputLabel: 'Service or issue to assign', purpose: 'Before assigning work or handing over a service, compare its responsibilities with catalog teams and identify an owner to consult.', candidateLabel: 'Teams to consider' },
-  templates: { inputLabel: 'Service requirements', purpose: 'Before creating a service, compare its requirements with available templates and identify a suitable starting point.', candidateLabel: 'Templates to compare' },
-  search: { title: 'Reference relevance', inputLabel: 'Question to answer', purpose: 'Before relying on a document or catalog entry, check which shortlisted references best address your question.', candidateLabel: 'References to compare' },
+  readiness: { title: 'Runbook check', inputLabel: 'Runbook or operating procedure', purpose: 'Before publishing a runbook or handing over a service, check that startup, health verification, rollback, and escalation steps are documented.' },
+  'change-risk': { title: 'Change review', inputLabel: 'Proposed change and rollout plan', purpose: 'Before opening a pull request or reviewing a rollout, check for compatibility, data migration, and access-control concerns, plus a documented rollback.' },
+  ownership: { title: 'Owner selection', inputLabel: 'Service or issue to assign', purpose: 'Before assigning work or handing over a service, compare its responsibilities with catalog teams and identify an owner to consult.', candidateLabel: 'Teams to consider' },
+  templates: { title: 'Template selection', inputLabel: 'Service requirements', purpose: 'Before creating a service, compare its requirements with available templates and identify a suitable starting point.', candidateLabel: 'Templates to compare' },
+  search: { title: 'Reference check', inputLabel: 'Question to answer', purpose: 'Before relying on a document or catalog entry, check which shortlisted references best address your question.', candidateLabel: 'References to compare' },
   incident: { inputLabel: 'Incident report', purpose: 'Before escalating an incident, check the reported customer impact and the first investigation area supported by the symptoms.' },
 };
 

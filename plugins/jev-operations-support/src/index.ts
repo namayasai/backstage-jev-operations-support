@@ -2,7 +2,8 @@ import { createComponentExtension, createPlugin, createRoutableExtension, create
 import { entityRouteRef } from '@backstage/plugin-catalog-react';
 export const rootRouteRef = createRouteRef({ id: 'jev-operations-support' });
 export const alertsRouteRef = createRouteRef({ id: 'jev-alerts' });
-export const jevPlugin = createPlugin({ id: 'jev-operations-support', routes: { root: rootRouteRef, alerts: alertsRouteRef } });
+export const triageRouteRef = createRouteRef({ id: 'jev-triage' });
+export const jevPlugin = createPlugin({ id: 'jev-operations-support', routes: { root: rootRouteRef, alerts: alertsRouteRef, triage: triageRouteRef } });
 export const JevPage = jevPlugin.provide(createRoutableExtension({
   name: 'JevPage', mountPoint: rootRouteRef,
   component: () => import('./BackstagePage').then(m => m.JevStandalonePage),
@@ -10,6 +11,10 @@ export const JevPage = jevPlugin.provide(createRoutableExtension({
 export const JevAlertsPage = jevPlugin.provide(createRoutableExtension({
   name: 'JevAlertsPage', mountPoint: alertsRouteRef,
   component: () => import('./BackstagePage').then(m => m.JevAlertsStandalonePage),
+}));
+export const JevTriagePage = jevPlugin.provide(createRoutableExtension({
+  name: 'JevTriagePage', mountPoint: triageRouteRef,
+  component: () => import('./BackstagePage').then(m => m.JevTriageStandalonePage),
 }));
 export const EntityJevContent = jevPlugin.provide(createRoutableExtension({
   name: 'EntityJevContent', mountPoint: entityRouteRef,
@@ -30,3 +35,6 @@ export { JevWorkbench } from './Workbench';
 export type { WorkbenchProps, TechDocsOptions } from './Workbench';
 export { AlertInbox, categorizeAlert } from './AlertInbox';
 export type { AlertInboxProps, AlertNotificationPage, AwsAlertNotification, JevAwsAlertMetadata } from './AlertInbox';
+
+export { ReportTriage } from './ReportTriage';
+export type { ReportTriageProps } from './ReportTriage';

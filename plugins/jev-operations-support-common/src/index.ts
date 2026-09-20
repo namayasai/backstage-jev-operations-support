@@ -1,3 +1,5 @@
+import type { ResponsePlanOutcome } from './responsePlan';
+export * from './responsePlan';
 import { z } from 'zod';
 import { createPermission } from '@backstage/plugin-permission-common';
 import { parseEntityRef, stringifyEntityRef, type Entity } from '@backstage/catalog-model';
@@ -152,6 +154,7 @@ export type Finding = {
 export type EvaluationResult = {
   workflow: WorkflowId; model: string; evaluatedAt: string; mode: 'live' | 'demo';
   findings: Finding[]; needsReview: boolean;
+  responsePlan?: ResponsePlanOutcome;
 };
 
 /**

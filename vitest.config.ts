@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import { resolve } from 'node:path';
 export default defineConfig({
   resolve: { alias: {
+    '@namayasai/backstage-plugin-jev-operations-support-backend/response-plan': resolve(__dirname, 'plugins/jev-operations-support-backend/src/responsePlan.ts'),
     '@namayasai/backstage-plugin-jev-operations-support-common': resolve(__dirname, 'plugins/jev-operations-support-common/src/index.ts'),
     '@namayasai/backstage-plugin-jev-operations-support-backend/client': resolve(__dirname, 'plugins/jev-operations-support-backend/src/client.ts'),
   } },

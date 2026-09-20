@@ -3,12 +3,9 @@ import { Box, Button, Card, CardContent, CardHeader, Chip, Divider, FormControlL
 import { Alert } from '@material-ui/lab';
 import { evaluationRequestSchema, type Candidate, type EvaluationRequest, type EvaluationResult } from '@namayasai/backstage-plugin-jev-operations-support-common';
 import { isEvaluationResult } from './evaluationResult';
-import { FindingCounts, FindingList, PendingChecks } from './Findings';
-import { LiveSwitch } from './LiveSwitch';
-import { useLiveEvaluation, useLivePreference, type EvaluateOptions } from './useLiveEvaluation';
-
-// A stable, empty candidate list: passing a fresh `[]` on every render would defeat memoization downstream.
-const NO_CANDIDATES: Candidate[] = [];
+import { ResponsePlanPanel } from './ResponsePlan';
+import { FindingList } from './Findings';
+import { useLivePreference, type EvaluateOptions } from './useLiveEvaluation';
 
 export const AWS_ALERT_TOPIC = 'jev-aws-alerts';
 const alertStates = ['ALARM', 'OK', 'INSUFFICIENT_DATA'] as const;
@@ -75,8 +72,6 @@ export interface AlertInboxProps {
   renderCandidateLink?: (candidate: Candidate) => ReactNode;
   /** How often the list is refreshed in the background; 0 turns it off. */
   pollMs?: number;
-  /** Quiet period before a pasted report is assessed. */
-  liveDelayMs?: number;
   /** Assess an active alarm that arrived without a Jev result as soon as it is opened. */
   autoCheck?: boolean;
   /** Whether this inbox is the view the reader is currently looking at. Hidden views poll and assess nothing. */
@@ -312,51 +307,15 @@ function ResultSection({ label, result, candidates, renderCandidateLink, note }:
       <Typography variant="caption" color="textSecondary">{result.mode === 'demo' ? 'ILLUSTRATIVE RESULT' : result.model} · {instantLabel(result.evaluatedAt)}{note ? ` · ${note}` : ''}</Typography>
     </Box>
     <FindingList findings={result.findings} candidates={candidates} renderCandidateLink={renderCandidateLink} headingLevel="h4" />
+    {result.workflow === 'incident' && <ResponsePlanPanel value={result.responsePlan} />}
   </div>;
-}
-
-const triageQuestions = ['Reported impact', 'Investigation area'];
-
-/**
- * A report that never became an alarm (a customer message, a chat thread) is triaged
- * with the same questions as an alert, and read the same way. Live is the same preference
- * as the rest of the inbox, so toggling it here or elsewhere updates both.
- */
-function ReportTriage({ evaluate, liveDelayMs, live, setLive, forcedOff = false, active = true }: { evaluate: AlertInboxProps['evaluate']; liveDelayMs?: number; live: boolean; setLive: (value: boolean) => void; forcedOff?: boolean; active?: boolean }) {
-  const [text, setText] = useState('');
-  const check = useLiveEvaluation({ evaluate, workflow: 'incident', text, candidates: NO_CANDIDATES, live, delayMs: liveDelayMs, paused: !active });
-  const label = check.busy ? 'Assessing…'
-    : check.pending && check.retryAt ? 'Retrying automatically after a failure — or choose Check now'
-    : check.pending ? 'Waiting for you to pause…'
-    : check.stale ? 'Out of date'
-    : check.result ? 'Up to date'
-    : !live ? 'Live check is off — choose Check now, or turn on Live to check as you type'
-    : check.blocker || 'Assessed as you type';
-  return <Card component="article" aria-label="Report triage">
-    <CardHeader title="Triage a report" subheader="Paste symptoms, customer impact, and known facts. Jev reads it the way it reads an alarm." titleTypographyProps={{ variant: 'h5', component: 'h3' }}
-      action={<LiveSwitch live={live} onChange={setLive} forcedOff={forcedOff} style={{ margin: '8px 8px 0 0' }} />} />
-    <Divider />
-    <CardContent>
-      <TextField id="jev-report" label="Report" variant="outlined" fullWidth multiline minRows={5} maxRows={16} value={text} error={check.overLimit} onChange={event => setText(event.target.value)} />
-      <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" mt={1} mb={2} style={{ gap: 8 }}>
-        <Typography variant="body2" color="textSecondary" role="status">{label}</Typography>
-        <Box display="flex" alignItems="center" style={{ gap: 8 }}>
-          {check.result && <FindingCounts findings={check.result.findings} />}
-          <Button variant={live ? 'outlined' : 'contained'} color="primary" size="small" disabled={check.busy || check.overLimit} onClick={check.checkNow}>{check.busy ? 'Checking…' : 'Check now'}</Button>
-        </Box>
-      </Box>
-      {check.error && <Alert severity="error" style={{ marginBottom: 16 }}>{check.error}</Alert>}
-      {check.result ? <FindingList findings={check.result.findings} stale={check.stale} headingLevel="h4" /> : <PendingChecks titles={triageQuestions} busy={check.busy} headingLevel="h4" />}
-      <Typography variant="caption" color="textSecondary" component="p" style={{ marginTop: 16 }}>This assessment is not stored and creates no alert. Sending it shares the report with TypeSafe through your Backstage backend.</Typography>
-    </CardContent>
-  </Card>;
 }
 
 /**
  * Alerts arrive on their own. The table keeps notification severity and Jev's interpretation
  * separate, and expands a detail view only after the reader selects an alert.
  */
-export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCandidateLink, pollMs = 30000, autoCheck = true, liveDelayMs, active = true, live: liveProp }: AlertInboxProps) {
+export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCandidateLink, pollMs = 30000, autoCheck = true, active = true, live: liveProp }: AlertInboxProps) {
   const classes = useStyles();
   const limit = 20;
   const [offset, setOffset] = useState(0);
@@ -384,9 +343,7 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
   const [lastLoaded, setLastLoaded] = useState<Date>();
   const [arrived, setArrived] = useState<Set<string>>(new Set());
   const [hideRecovered, setHideRecovered] = useState(false);
-  const [reporting, setReporting] = useState(false);
-  const [preference, setLive] = useLivePreference();
-  const forcedOff = liveProp === false;
+  const [preference] = useLivePreference();
   const live = liveProp !== false && preference;
   // Manual results belong to the list that is on screen; a reload invalidates them.
   const listGeneration = useRef(0);
@@ -558,7 +515,7 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
   // An active alarm that arrived without an assessment gets one as soon as it is opened, once —
   // but only when the reader themselves opened it (see `pickedId`, decided at click time below):
   // never for the alert that was selected automatically, and never because a refresh or reload
-  // changed the selection. `pickedId` itself already encodes whether Live, the report tool, and
+  // changed the selection. `pickedId` itself already encodes whether Live and
   // this view being on screen allowed a send at the moment of the click, and is cleared again the
   // instant any of those flips to blocking — so the only deferral left here is waiting for an
   // in-flight check or the list itself to finish loading.
@@ -566,9 +523,9 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
   // The click that set `pickedId` only expressed intent for the conditions true at that instant;
   // if any of them later flips to blocking, that intent no longer holds and must not fire late.
   useEffect(() => {
-    if (!(autoCheck && live && active) || reporting) setPickedId('');
+    if (!(autoCheck && live && active)) setPickedId('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoCheck, live, active, reporting]);
+  }, [autoCheck, live, active]);
   useEffect(() => {
     if (!needsAssessment) return;
     if (autoAssessedRef.current.has(selectedId)) return;
@@ -586,7 +543,7 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
       <Card>
         <CardHeader className={classes.cardHeader} title="AWS alerts" titleTypographyProps={{ variant: 'h5', component: 'h2' }}
           subheader={pollFailed ? 'Background refresh failed; showing the last loaded list.' : lastLoaded ? `Last refreshed ${lastLoaded.toLocaleTimeString()}${pollMs ? ` · refreshes every ${Math.round(pollMs / 1000)}s` : ''}` : 'CloudWatch alerts delivered through Backstage Notifications.'}
-          action={<><Button size="small" color="primary" aria-pressed={reporting} style={{ margin: '8px 4px 0 0' }} onClick={() => setReporting(value => !value)}>Triage a report</Button><Button size="small" disabled={loading} variant="outlined" style={{ margin: '8px 8px 0 0' }} onClick={() => { if (offset === 0) setRefreshToken(value => value + 1); else setOffset(0); }}>{loading ? 'Refreshing…' : 'Refresh'}</Button></>} />
+          action={<Button size="small" disabled={loading} variant="outlined" style={{ margin: '8px 8px 0 0' }} onClick={() => { if (offset === 0) setRefreshToken(value => value + 1); else setOffset(0); }}>{loading ? 'Refreshing…' : 'Refresh'}</Button>} />
         <Divider />
         {error && <Alert severity="error" style={{ margin: 16 }}>{error}</Alert>}
         {skipped > 0 && <Alert severity="warning" role="status" style={{ margin: 16 }}>{skipped} row{skipped === 1 ? '' : 's'} could not be displayed because {skipped === 1 ? 'it was' : 'they were'} not readable AWS alert notifications.</Alert>}
@@ -596,9 +553,9 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
           <TableContainer>
             <Table className={classes.table} aria-label="AWS alert list" size="small">
               <TableHead><TableRow><TableCell className={classes.typeColumn}>Type</TableCell><TableCell className={classes.severityColumn}>Severity</TableCell><TableCell className={classes.log}>Log</TableCell><TableCell>Jev quick check</TableCell></TableRow></TableHead>
-              <TableBody>{visible.map(({ notification, group, area }) => <TableRow key={notification.id} hover selected={detailsOpen && !reporting && notification.id === selectedId}
+              <TableBody>{visible.map(({ notification, group, area }) => <TableRow key={notification.id} hover selected={detailsOpen && notification.id === selectedId}
                 style={{ cursor: 'pointer' }} onClick={() => {
-                  setReporting(false); setSelectedId(notification.id); setDetailsOpen(true);
+                  setSelectedId(notification.id); setDetailsOpen(true);
                   setPickedId(autoCheck && live && active ? notification.id : '');
                   setStaleSelected(undefined); setArrived(current => { const next = new Set(current); next.delete(notification.id); return next; });
                 }}>
@@ -633,9 +590,7 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
       </Card>
     </Grid>
     <Grid item xs={12}>
-      {/* Kept mounted so a half-written report survives a look at an alert; paused while hidden or the inbox itself is not on screen. */}
-      <div hidden={!reporting}><ReportTriage evaluate={evaluate} liveDelayMs={liveDelayMs} live={live} setLive={setLive} forcedOff={forcedOff} active={active && reporting} /></div>
-      {reporting || !detailsOpen ? null : selected ? <Card ref={detailsRef} id="jev-alert-details" component="article" aria-label="AWS alert details">
+      {!detailsOpen ? null : selected ? <Card ref={detailsRef} id="jev-alert-details" component="article" aria-label="AWS alert details">
         <CardHeader className={classes.cardHeader} title={selected.title} subheader={selected.description || 'No reason supplied.'} titleTypographyProps={{ variant: 'h5', component: 'h3' }}
           action={<><Chip size="small" variant="outlined" label={selected.metadata ? `AWS state: ${selected.metadata.awsState}` : 'Details unavailable'} /><Button size="small" onClick={() => { setDetailsOpen(false); setPickedId(''); }}>Close details</Button></>} />
         <Divider />
