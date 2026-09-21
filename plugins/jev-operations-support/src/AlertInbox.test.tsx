@@ -56,6 +56,22 @@ async function openAlert(name = 'checkout-high-errors') {
 }
 
 describe('AWS alert inbox', () => {
+  it('labels and filters monitoring OK separately from unresolved or unavailable impact', async () => {
+    const ok = rawRow({ id: 'ok' }, { awsState: 'OK' });
+    ok.payload.title = 'alarm-back-to-ok';
+    const unknown = rawRow({ id: 'unknown' }, null);
+    unknown.payload.title = 'details-unavailable';
+    const notifications = parseAlertNotificationPage({ totalCount: 3, notifications: [ok, rawRow(), unknown] });
+    render(<AlertInbox loadNotifications={async () => notifications} evaluate={vi.fn()} pollMs={0} />);
+    await screen.findByText('Alarm returned to OK');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Hide OK alarms' }));
+    expect(screen.queryByRole('button', { name: 'alarm-back-to-ok' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'checkout-high-errors' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'details-unavailable' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Hide OK alarms' }));
+    expect(screen.getByRole('button', { name: 'alarm-back-to-ok' })).toBeTruthy();
+  });
+
   it('shows severity separately from Jev impact and opens details only on selection', async () => {
     const row = rawRow();
     Object.assign(row.payload, { severity: 'high' });

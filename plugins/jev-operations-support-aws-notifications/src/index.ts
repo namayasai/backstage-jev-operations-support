@@ -795,6 +795,7 @@ export const awsNotificationsModule = createBackendModule({
         config: coreServices.rootConfig,
         logger: coreServices.logger,
         database: coreServices.database,
+        scheduler: coreServices.scheduler,
         discovery: coreServices.discovery,
         auth: coreServices.auth,
         httpAuth: coreServices.httpAuth,
@@ -802,7 +803,7 @@ export const awsNotificationsModule = createBackendModule({
         events: eventsServiceRef,
         notifications: notificationService,
       },
-      async init({ config, logger, database, discovery, auth, httpAuth, httpRouter, events, notifications }) {
+      async init({ config, logger, database, scheduler, discovery, auth, httpAuth, httpRouter, events, notifications }) {
         const settings = readAwsAlertSettings(config);
         if (!settings) {
           logger.info('Jev AWS notification module is inactive: no awsNotifications configuration was provided');
@@ -820,6 +821,21 @@ export const awsNotificationsModule = createBackendModule({
         // One plugin-owned table in the host's existing database, created by a single
         // packaged migration. The notification itself stays with the Notifications backend.
         const store = await createAwsAlertDetailsStore(database, { logger });
+        await scheduler.scheduleTask({
+          id: 'jev-aws-alert-details-retention',
+          scope: 'global',
+          frequency: { minutes: 5 },
+          timeout: { minutes: 1 },
+          initialDelay: { minutes: 1 },
+          fn: async () => {
+            try {
+              await store.pruneExpired();
+            } catch {
+              // Do not log database error bodies, which can include stored details.
+              logger.warn('Failed to apply the AWS alert detail retention policy; the next scheduled run will retry');
+            }
+          },
+        });
         httpRouter.use(createAwsAlertsRouter({ httpAuth, auth, discovery, store, logger }));
         // Only built when the owner suggestion is enabled: an unconfigured or disabled
         // install never issues the catalog request that backs it.

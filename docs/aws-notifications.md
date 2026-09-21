@@ -183,9 +183,15 @@ inbox identity, the title, the alarm reason, the AWS state summary, and each
 user's read/saved preferences. The module never reads or writes the notifications
 database itself, and it never touches notification origin or permissions.
 
-Detail rows are kept for **30 days**. Cleanup is a bounded delete on the indexed
-`updated_at` column performed during ordinary writes; there is no background
-worker and no configuration knob. Cleanup only ever removes rows from this table
+Detail rows expire **30 days after their last write**, not their original receipt.
+Re-evaluation or redelivery that saves details restarts this period. Reads exclude
+rows older than that cutoff even when no new alerts arrive or cleanup is delayed;
+a row exactly at the cutoff is still readable. A globally scheduled Backstage task
+starts after one minute and deletes at most 500 expired rows every five minutes,
+using the indexed `updated_at` column. A backlog drains over successive runs. A row
+refreshed during cleanup is preserved by rechecking its timestamp before deletion.
+Failed cleanup is logged without database error details and retried on the next run.
+There is no retention configuration knob. Cleanup only ever removes rows from this table
 — it never deletes a notification. An alert whose detail row has expired, was
 never written, or cannot be read stays visible in the inbox with its title,
 alarm reason, and receipt time, and says that its details are unavailable; no

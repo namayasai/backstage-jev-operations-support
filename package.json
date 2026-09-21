@@ -13,14 +13,15 @@
   "scripts": {
     "build": "npm run build --workspace plugins/jev-operations-support-common --workspace plugins/jev-operations-support-backend --workspace plugins/jev-operations-support --workspace plugins/jev-operations-support-tech-insights --workspace plugins/jev-operations-support-aws-notifications",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=2",
     "test:watch": "vitest",
     "dev": "vite --host 127.0.0.1",
     "build:demo": "vite build",
-    "check": "npm run typecheck && npm test && npm run build && npm run build:demo",
+    "check": "npm run typecheck && npm test && npm run build && npm run build:demo && npm run test:packages",
     "test:live": "tsx scripts/live-smoke.ts",
     "eval:live": "tsx scripts/eval-fixtures.ts",
-    "pack:plugins": "npm run build && mkdir -p dist/packages && npm pack --workspaces --pack-destination dist/packages"
+    "pack:plugins": "npm run build && mkdir -p dist/packages && npm pack --workspaces --pack-destination dist/packages",
+    "test:packages": "node scripts/verify-packages.mjs"
   },
   "devDependencies": {
     "@backstage/plugin-search-react": "^1.11.8",

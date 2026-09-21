@@ -91,7 +91,22 @@ describe('AWS alert detail store', () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 
-  it('removes only expired detail rows during an ordinary write', async () => {
+  it('hides expired details without requiring a new write or cleanup, and preserves the exact boundary', async () => {
+    const db = database();
+    let now = new Date('2026-08-01T00:00:00.000Z');
+    const store = await createAwsAlertDetailsStore(db, { now: () => now });
+    await store.save('old', details());
+    now = new Date(now.getTime() + 1);
+    await store.save('boundary', details());
+    now = new Date(now.getTime() + awsAlertDetailsRetentionDays * 24 * 60 * 60 * 1000);
+
+    expect([...(await store.read(['old', 'boundary'])).keys()]).toEqual(['boundary']);
+    expect(await db.client(awsAlertDetailsTable).count({ rows: '*' })).toEqual([{ rows: 2 }]);
+    expect(await store.pruneExpired()).toBe(1);
+    expect(await db.client(awsAlertDetailsTable).pluck('scope')).toEqual(['boundary']);
+  });
+
+  it('removes only expired detail rows during scheduled cleanup', async () => {
     const db = database();
     const day = 24 * 60 * 60 * 1000;
     let now = new Date('2026-08-01T00:00:00.000Z');
@@ -103,8 +118,42 @@ describe('AWS alert detail store', () => {
     now = new Date(now.getTime() + 2 * day);
     await store.save('aws-cloudwatch:new', details());
 
+    expect(await store.pruneExpired()).toBe(1);
+
     const remaining = await db.client(awsAlertDetailsTable).pluck('scope');
     expect(remaining.sort()).toEqual(['aws-cloudwatch:new', 'aws-cloudwatch:recent']);
+  });
+
+  it('limits each cleanup batch and resumes on the next run, preserving refreshed details', async () => {
+    const db = database();
+    const store = await createAwsAlertDetailsStore(db, { now: () => new Date('2026-09-21T00:00:00.000Z') });
+    const rows = Array.from({ length: 503 }, (_, index) => ({
+      scope: `old-${index}`, details: JSON.stringify(details()), updated_at: '2026-08-01T00:00:00.000Z',
+    }));
+    await db.client.batchInsert(awsAlertDetailsTable, rows, 100);
+    await store.save('old-0', details({ awsState: 'OK' }));
+
+    expect(await store.pruneExpired()).toBe(500);
+    expect(await db.client(awsAlertDetailsTable).count({ rows: '*' })).toEqual([{ rows: 3 }]);
+    expect(await store.pruneExpired()).toBe(2);
+    expect(await store.pruneExpired()).toBe(0);
+    expect((await store.read(['old-0'])).get('old-0')?.details.awsState).toBe('OK');
+  });
+
+  it('can retry cleanup after a database failure without losing readable details', async () => {
+    const db = database();
+    let now = new Date('2026-08-01T00:00:00.000Z');
+    const store = await createAwsAlertDetailsStore(db, { now: () => now });
+    await store.save('old', details());
+    now = new Date('2026-09-21T00:00:00.000Z');
+    await store.save('recent', details());
+    await db.client.schema.renameTable(awsAlertDetailsTable, 'temporarily_unavailable');
+    await expect(store.pruneExpired()).rejects.toThrow();
+    await db.client.schema.renameTable('temporarily_unavailable', awsAlertDetailsTable);
+
+    expect([...(await store.read(['old', 'recent'])).keys()]).toEqual(['recent']);
+    expect(await store.pruneExpired()).toBe(1);
+    expect(await db.client(awsAlertDetailsTable).pluck('scope')).toEqual(['recent']);
   });
 });
 
