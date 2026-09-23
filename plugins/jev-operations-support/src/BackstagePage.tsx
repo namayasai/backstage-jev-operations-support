@@ -9,7 +9,7 @@ import type { Candidate, WorkflowId } from '@namayasai/backstage-plugin-jev-oper
 import { JevWorkbench, type TechDocsOptions } from './Workbench';
 import { ReportTriage } from './ReportTriage';
 import { AlertInbox, parseAlertNotificationPage } from './AlertInbox';
-import { useJevEvaluate, responseError } from './useJevEvaluate';
+import { useJevEvaluate, useJevResponsePlan, responseError } from './useJevEvaluate';
 import { loadCatalogCandidates } from './catalogCandidates';
 
 const TECHDOCS_REF_ANNOTATION = 'backstage.io/techdocs-ref';
@@ -115,6 +115,7 @@ export function JevPage({ initialText, contextNote, techDocs, showAlerts = true,
   function open(next: View) { setView(next); setOpened(current => current.includes(next) ? current : [...current, next]); }
   // Stable callback: the alert inbox reloads its list whenever this changes identity.
   const evaluate = useJevEvaluate();
+  const requestResponsePlan = useJevResponsePlan();
   const loadCandidates = useCallback((workflow: WorkflowId, term: string) => loadCatalogCandidates(catalog, workflow, term), [catalog]);
   const loadOwners = useCallback(() => loadCandidates('ownership', ''), [loadCandidates]);
   const loadNotifications = useCallback(async (offset: number, limit: number) => {
@@ -140,9 +141,9 @@ export function JevPage({ initialText, contextNote, techDocs, showAlerts = true,
     catch { return <code>{candidate.entityRef}</code>; }
   }, [entityRoute]);
   const review = <JevWorkbench evaluate={evaluate} workflowIds={reviewWorkflows} loadCandidates={loadCandidates} renderCandidateLink={renderCandidateLink} initialText={initialText} contextNote={contextNote} techDocs={techDocs} liveDelayMs={liveDelayMs} />;
-  if (page === 'triage') return <Content><ReportTriage evaluate={evaluate} liveDelayMs={liveDelayMs} /></Content>;
+  if (page === 'triage') return <Content><ReportTriage evaluate={evaluate} requestResponsePlan={requestResponsePlan} liveDelayMs={liveDelayMs} /></Content>;
   if (!showAlerts) return review;
-  if (page === 'alerts') return <Content><AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} loadOwners={loadOwners} renderCandidateLink={renderCandidateLink} /></Content>;
+  if (page === 'alerts') return <Content><AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} requestResponsePlan={requestResponsePlan} loadOwners={loadOwners} renderCandidateLink={renderCandidateLink} /></Content>;
   if (page === 'playground') return <Content><Typography variant="body1" color="textSecondary" paragraph>Check a draft before a pull request, service handover, or service creation. Choose what you want to check, review the findings, and address any gaps before proceeding.</Typography><JevWorkbench evaluate={evaluate} workflowIds={precheckWorkflowIds} loadCandidates={loadCandidates} renderCandidateLink={renderCandidateLink} initialText={initialText} liveDelayMs={liveDelayMs} /></Content>;
   return <Content>
     <Tabs value={view} indicatorColor="primary" textColor="primary" onChange={(_, next: View) => { chose.current = true; open(next); }} aria-label="Operations Support views" style={{ marginBottom: 24 }}>
@@ -150,7 +151,7 @@ export function JevPage({ initialText, contextNote, techDocs, showAlerts = true,
     </Tabs>
     {/* A view is mounted on first visit and kept, so switching never discards work in progress.
         `active` gates every unrequested send: a view the reader is not looking at sends and polls nothing. */}
-    {opened.includes('alerts') && <div hidden={view !== 'alerts'} role="tabpanel" id="jev-tabpanel-alerts" aria-labelledby="jev-tab-alerts"><AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} loadOwners={loadOwners} renderCandidateLink={renderCandidateLink} active={view === 'alerts'} /></div>}
+    {opened.includes('alerts') && <div hidden={view !== 'alerts'} role="tabpanel" id="jev-tabpanel-alerts" aria-labelledby="jev-tab-alerts"><AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} requestResponsePlan={requestResponsePlan} loadOwners={loadOwners} renderCandidateLink={renderCandidateLink} active={view === 'alerts'} /></div>}
     {opened.includes('playground') && <div hidden={view !== 'playground'} role="tabpanel" id="jev-tabpanel-playground" aria-labelledby="jev-tab-playground"><JevWorkbench evaluate={evaluate} workflowIds={precheckWorkflowIds} loadCandidates={loadCandidates} renderCandidateLink={renderCandidateLink} initialText={initialText} contextNote={contextNote} techDocs={techDocs} liveDelayMs={liveDelayMs} active={view === 'playground'} /></div>}
   </Content>;
 }

@@ -3,7 +3,7 @@ import { Box, Button, Card, CardContent, CardHeader, Divider, TextField, Typogra
 import { Alert } from '@material-ui/lab';
 import type { Candidate, EvaluationRequest, EvaluationResult } from '@namayasai/backstage-plugin-jev-operations-support-common';
 import { FindingCounts, FindingList, PendingChecks } from './Findings';
-import { ResponsePlanPanel } from './ResponsePlan';
+import { ResponsePlanSection, type RequestResponsePlan } from './ResponsePlan';
 import { LiveSwitch } from './LiveSwitch';
 import { useLiveEvaluation, useLivePreference, type EvaluateOptions } from './useLiveEvaluation';
 
@@ -17,12 +17,14 @@ const triageQuestions = ['Reported impact', 'Investigation area'];
  */
 export interface ReportTriageProps {
   evaluate: (request: EvaluationRequest, options?: EvaluateOptions) => Promise<EvaluationResult>;
+  /** Generates response suggestions for an assessment on request. Live and Check now only run Jev. */
+  requestResponsePlan?: RequestResponsePlan;
   liveDelayMs?: number;
   live?: boolean;
   active?: boolean;
 }
 
-export function ReportTriage({ evaluate, liveDelayMs, live: liveProp, active = true }: ReportTriageProps) {
+export function ReportTriage({ evaluate, requestResponsePlan, liveDelayMs, live: liveProp, active = true }: ReportTriageProps) {
   const [preference, setLive] = useLivePreference();
   const forcedOff = liveProp === false;
   const live = !forcedOff && preference;
@@ -51,8 +53,8 @@ export function ReportTriage({ evaluate, liveDelayMs, live: liveProp, active = t
       {check.error && <Alert severity="error" style={{ marginBottom: 16 }}>{check.error}</Alert>}
       {check.result?.mode === 'demo' && <Alert severity="warning" style={{ marginBottom: 16 }}>Backend demo mode is enabled. These fixed results do not evaluate your report.</Alert>}
       {check.result ? <FindingList findings={check.result.findings} stale={check.stale} headingLevel="h4" /> : <PendingChecks titles={triageQuestions} busy={check.busy} headingLevel="h4" />}
-      {check.result && <ResponsePlanPanel value={check.result.responsePlan} stale={check.stale} />}
-      <Typography variant="caption" color="textSecondary" component="p" style={{ marginTop: 16 }}>This assessment is not stored and creates no alert. The report is sent to Jev and, when configured, the response-planning LLM through your Backstage backend.</Typography>
+      {check.result && <ResponsePlanSection result={check.result} stale={check.stale} requestPlan={requestResponsePlan} />}
+      <Typography variant="caption" color="textSecondary" component="p" style={{ marginTop: 16 }}>This assessment is not stored and creates no alert. The report is sent to Jev through your Backstage backend. It is sent to the response-planning LLM only when you choose Generate response suggestions.</Typography>
     </CardContent>
   </Card>;
 }

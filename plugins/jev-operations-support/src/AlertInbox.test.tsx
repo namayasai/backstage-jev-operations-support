@@ -311,6 +311,22 @@ describe('AWS alert inbox', () => {
     expect(screen.getByText('New')).toBeTruthy();
   });
 
+  it('generates response suggestions for a manual re-check only on request, leaving the stored result as it was', async () => {
+    const evaluate = vi.fn(async (input: EvaluationRequest) => ({ ...demoEvaluation(input), responsePlanRef: { id: 'recheck-ref', expiresAt: '2026-09-23T00:15:00.000Z' } }));
+    const requestResponsePlan = vi.fn(async (_ref: string) => ({ status: 'failed', provider: 'openai', model: 'planner', code: 'timeout' }));
+    render(<AlertInbox loadNotifications={async () => page()} evaluate={evaluate} requestResponsePlan={requestResponsePlan} pollMs={0} />);
+    await openAlert();
+    // The stored receipt result has no reference, so it offers nothing to generate.
+    await screen.findByText('Stored Jev result from receipt');
+    expect(screen.queryByRole('button', { name: 'Generate response suggestions' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Re-check with Jev' }));
+    await screen.findByText('Manual Jev re-check (not stored)');
+    expect(requestResponsePlan).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Generate response suggestions' }));
+    expect(await screen.findByText(/The LLM request timed out/)).toBeTruthy();
+    expect(requestResponsePlan).toHaveBeenCalledWith('recheck-ref', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+
   it('suggests an owning team for the selected alert from the catalog teams', async () => {
     const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
     const loadOwners = vi.fn(async () => [{ id: 'group:default/payments', entityRef: 'group:default/payments', title: 'Payments', description: 'Checkout and billing' }, { id: 'group:default/identity', entityRef: 'group:default/identity', title: 'Identity', description: 'Login' }]);

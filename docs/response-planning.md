@@ -6,8 +6,8 @@ Jev classifies reported impact and an investigation area. An optional second LLM
 
 ## Where it runs
 
-- **Triage** (`/jev-triage`): enter a human report, then run the check. Jev runs first; when configured, response planning follows automatically in the same request. A failed second stage still returns the Jev result. Editing while Live is enabled or leaving the page cancels superseded requests. This manual result is not stored.
-- **Alerts** (`/jev-alerts`): a CloudWatch `ALARM` that receives a successful Jev assessment also receives response suggestions. The alert and Jev result are saved before waiting for the LLM. Generated suggestions, or a sanitized failure status, are added to the existing detail row. `OK` and `INSUFFICIENT_DATA` notifications do not generate response plans. The stored plan is visible when selecting the alert; a manual re-check produces an unsaved result with a fresh plan.
+- **Triage** (`/jev-triage`): enter a human report, then run the check. Only Jev runs on **Check now** or Live, so its assessment appears without waiting for the LLM. Choose **Generate response suggestions** to plan from that exact report and assessment. The button is disabled while a plan is generating, and after an edit until the report is checked again. An earlier plan is marked out of date when the report changes, and is cleared by a new assessment. A failed plan leaves the Jev result on screen. Leaving the page cancels an in-flight request. Nothing here is stored.
+- **Alerts** (`/jev-alerts`): a CloudWatch `ALARM` that receives a successful Jev assessment also receives response suggestions. The alert and Jev result are saved before waiting for the LLM. Generated suggestions, or a sanitized failure status, are added to the existing detail row. `OK` and `INSUFFICIENT_DATA` notifications do not generate response plans. The stored plan is visible when selecting the alert; a manual re-check produces an unsaved result, and **Generate response suggestions** plans from it on request.
 - **Pre-check** (`/jev-operations-support`): document, change, ownership, template and reference checks remain Jev-only. They do not send an extra request to this LLM.
 
 ## Configure one provider
@@ -50,14 +50,23 @@ A compatible API must support bearer authentication, Chat Completions, `max_toke
 
 Switch `provider`, `model` and the key in backend configuration to change LLM. There is no client-side key entry, arbitrary endpoint selection, provider fallback or model fan-out.
 
+## How a manual plan is requested
+
+The interactive `/evaluate` response for an `incident` assessment carries `responsePlanRef` (`id`, `expiresAt`) when a planner is configured. The browser sends only that `id` to `POST /response-plan`. It cannot supply a report or Jev result of its own. The backend plans from the report and findings it produced itself.
+
+- A reference is valid for 15 minutes, only for the user it was issued to, and only in the backend process that issued it. It is kept in memory, never stored, and lost on restart. At most 20 references per user and 500 per process are kept, oldest removed first. An unknown, expired, or foreign reference returns `404` with the same message. In a multi-instance deployment, route a user's requests to one instance, or expect an occasional "check the report again".
+- One plan is generated at a time per reference (`409` otherwise). Asking again after it finishes calls the provider again.
+- `/response-plan` requires a signed-in user with the `jev-operations-support.evaluate` permission and uses the same per-user rate limit as `/evaluate`. A planner failure returns `200` with a `failed` outcome and no provider detail.
+- Received AWS alarms are unchanged: the plan is generated at receipt and stored with the alert.
+
 ## What is sent and returned
 
 The selected LLM receives the original incident text plus Jev's finding IDs, questions, values, statuses and confidence values. It does not receive API keys in the prompt, earlier LLM plans, unrelated catalog entries, PR contents, or documentation fetched behind the scenes. Native provider requests have no tools enabled. The report can itself contain sensitive operational information; the configured provider's data-handling policy applies. `store: false` is an OpenAI response-storage option, not a promise about all provider retention.
 
 The validated response contains a summary, up to four hypotheses (with evidence and verification), six read-only checks, five possible actions (with preconditions, risks and recovery verification), and six missing-information items. Each text field is limited to 1200 characters. The UI renders plain text, not executable content. JSON conformity validates shape, not factual accuracy: operators still verify proposals against telemetry and their approved runbooks.
 
-Only one attempt is made per assessment. The deadline is configurable from 1–60 seconds, the output-token budget from 256–8192, and response bodies are bounded to 128 KiB. Each planner instance admits two simultaneous generations and returns a busy state instead of building an unbounded queue. The existing per-user evaluation limit and AWS workload limit also apply. Native backend and AWS module planner instances have independent concurrency counters. Every repeated manual assessment or SNS redelivery can incur another provider call; there is no new job queue or cache.
+Each request makes one attempt; there is no automatic retry. The deadline is configurable from 1–60 seconds, the output-token budget from 256–8192, and response bodies are bounded to 128 KiB. Each planner instance admits two simultaneous generations and returns a busy state instead of building an unbounded queue. The existing per-user evaluation limit and AWS workload limit also apply. Native backend and AWS module planner instances have independent concurrency counters. Every manual **Generate response suggestions** request or SNS redelivery can incur another provider call; there is no new job queue or cache.
 
 Malformed, refused, incomplete, timed-out or failed responses never become a proposed plan. Provider error bodies are not returned or logged. The Jev result remains visible with a separate planning failure. AWS storage uses its existing detail table and retention period; there is no additional database.
 
-With whole-installation `demoMode: true`, no live provider is called. Manual Triage can show a clearly marked fixed response-plan sample when `responsePlanning.enabled` is true. AWS automatic evaluation remains not-evaluated in demo mode, as before.
+With whole-installation `demoMode: true`, no live provider is called. Manual Triage can show a clearly marked fixed response-plan sample after **Generate response suggestions** when `responsePlanning.enabled` is true. AWS automatic evaluation remains not-evaluated in demo mode, as before.
