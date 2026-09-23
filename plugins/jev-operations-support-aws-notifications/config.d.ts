@@ -26,6 +26,20 @@ export interface Config {
         /** Seconds the loaded catalog Group list is cached in memory, 30-3600. @visibility backend */
         cacheSeconds?: number;
       };
+      /**
+       * Exact CloudWatch alarm ARNs mapped to the catalog entity (and optionally the
+       * environment) they monitor. Used only to show service context when alerts are
+       * read, with each reader's own catalog permissions; never sent to Jev.
+       * @visibility backend
+       */
+      serviceBindings?: Array<{
+        /** Full entity ref, e.g. component:default/checkout. @visibility backend */
+        entityRef: string;
+        /** Environment label shown with the alert, e.g. production. @visibility backend */
+        environment?: string;
+        /** Exact alarm ARNs, matched case-sensitively. @visibility backend */
+        alarmArns: string[];
+      }>;
     };
   };
 }

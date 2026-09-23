@@ -494,6 +494,41 @@ Backstage and AWS plans. Start with one test alarm and an exact TopicArn allowli
 expanding recipients or alarm volume. The module does not estimate AWS or Jev
 pricing.
 
+## Service context
+
+Optional. Bind exact alarm ARNs to the catalog entity they monitor and, if useful, an environment label:
+
+```yaml
+jevOperationsSupport:
+  awsNotifications:
+    serviceBindings:
+      - entityRef: component:default/checkout
+        environment: production
+        alarmArns:
+          - arn:aws:cloudwatch:ap-northeast-1:123456789012:alarm:checkout-5xx-rate
+          - arn:aws:cloudwatch:ap-northeast-1:123456789012:alarm:checkout-latency
+```
+
+- ARNs match exactly and case-sensitively. Nothing is inferred from alarm names, tags, or the alert text. `entityRef` must include its kind. Up to 500 bindings with 100 ARNs each; invalid entries stop the backend at startup.
+- Bindings are applied when alerts are **read**, so a configuration change also applies to alerts already received. No migration, no new stored column, and nothing is sent to Jev or to a response-planning LLM.
+- The read endpoint looks up the bound entities, then their owners, with the **signed-in reader's own catalog token**, in at most two batched catalog requests per page. Catalog permission rules therefore decide what each reader sees.
+- Each alert gets one of these states. They are shown separately and none is presented as "owner unknown":
+
+| State | Meaning |
+| --- | --- |
+| No binding | No `serviceBindings` entry lists this alarm ARN. |
+| Catalog unavailable | A binding exists, but the catalog could not be read (error, timeout, or no token). Refresh retries. |
+| Not available to you | A binding exists, but the catalog returned nothing for this reader. The configured entity ref is **withheld** from the response, because a missing entity and one the reader may not see are indistinguishable. |
+| Bound | The service title, kind/type, lifecycle, environment, System, `dependsOn` entities (up to 10), `http(s)` links (up to 20), and owner. The owner is shown as resolved, **not set** (missing or a conventional unowned value), or **could not be loaded**. |
+
+- An alarm listed in several bindings shows every visible service and says that which one is affected is not decided. A reader's choice on screen is never written back to configuration.
+- Catalog relations and links are investigation context. They are not evidence of cause or current service state. Runbook links are shown as links only; their content is not fetched.
+- Without `serviceBindings`, the response is unchanged from earlier releases.
+
+### Owner suggestion scope
+
+When the selected alert's visible services name exactly one System, the manual **Suggest owning team** action chooses among the teams related to that System: the Groups that own the System and the Groups that own entities which are `partOf` it, as visible to the reader (up to 20). If none are found, it falls back to the general list (the first 20 catalog Groups in name order) and says so. Every suggestion, including one stored at receipt, states which list it was chosen from, lists those teams, and states that teams outside the list cannot be suggested. The receipt-time suggestion itself is unchanged and still uses the general Group list.
+
 ## Alert list and detail view
 
 Open **Alerts** in the Backstage sidebar. The table shows **Type**, **Severity**, **Log**, and **Jev quick check**. Select a row to show its stored incident assessment, owner suggestion, and original context; close the details to return to the list. **Refresh** remains available above the table, alongside automatic refresh.

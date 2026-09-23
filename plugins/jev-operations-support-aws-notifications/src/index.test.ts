@@ -46,6 +46,7 @@ function settings(overrides: Partial<AwsAlertSettings> = {}): AwsAlertSettings {
     confidenceThreshold: 0.8,
     demoMode: false,
     ownerSuggestion: { enabled: false, maxGroups: 20, cacheSeconds: 300 },
+    serviceBindings: [],
     ...overrides,
   };
 }
