@@ -29,8 +29,15 @@ const fixtures = [
   alert('a1', 'checkout-5xx-rate', 'HTTP 5xx rate above 5% for 5 minutes', checkoutContext, 6, {
     ownerStatus: 'evaluated',
     ownerResult: demoEvaluation({ workflow: 'ownership', text: checkoutContext, candidates: ownerGroups }),
+    ownerCandidates: ownerGroups.map(({ id, title }) => ({ id, title })),
+    // Service context as the read endpoint attaches it from jevOperationsSupport.awsNotifications.serviceBindings.
+    service: { status: 'bound', services: [{
+      status: 'available', entityRef: 'component:default/checkout', environment: 'production', kind: 'Component', title: 'Checkout API', type: 'service', lifecycle: 'production',
+      system: 'system:default/storefront', dependsOn: ['resource:default/orders-db'], owner: { status: 'resolved', entityRef: 'group:default/payments', title: 'Payments platform' },
+      links: [{ url: 'https://example.com/runbooks/checkout', title: 'Checkout runbook' }, { url: 'https://example.com/dashboards/checkout', title: 'Dashboard' }],
+    }] },
   }),
-  alert('a2', 'identity-login-latency', 'p99 login latency above 3s', 'Login latency p99 is above three seconds in ap-northeast-1. No customer reports yet.', 18, { result: undefined, evaluationStatus: 'not-evaluated', errorCode: 'evaluation-capacity-reached' }),
+  alert('a2', 'identity-login-latency', 'p99 login latency above 3s', 'Login latency p99 is above three seconds in ap-northeast-1. No customer reports yet.', 18, { result: undefined, evaluationStatus: 'not-evaluated', errorCode: 'evaluation-capacity-reached', service: { status: 'unbound' } }),
   alert('a3', 'search-indexer-lag', 'Indexer lag recovered', 'Search indexer lag exceeded ten minutes and has since returned to normal.', 95, { awsState: 'OK' }),
 ];
 const loadNotifications = async () => parseAlertNotificationPage({ totalCount: fixtures.length, notifications: fixtures });

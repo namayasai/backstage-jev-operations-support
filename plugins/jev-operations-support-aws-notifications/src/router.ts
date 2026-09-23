@@ -3,6 +3,8 @@ import type { AuthService, DiscoveryService, HttpAuthService, LoggerService } fr
 import type { JsonValue } from '@backstage/types';
 import { awsAlertNotificationOrigin, awsAlertNotificationTopic, awsMetadataKey } from './constants';
 import type { AwsAlertDetailsStore, StoredAwsAlertDetails } from './store';
+import { resolveAlertServices, type AlertServiceContext, type ServiceBinding } from './serviceBindings';
+import type { CatalogApi } from '@backstage/catalog-client';
 
 export const awsAlertsRoutePath = '/aws-alerts';
 export const defaultAwsAlertPageLimit = 20;
@@ -16,6 +18,11 @@ export type AwsAlertsRouterOptions = {
   store: AwsAlertDetailsStore;
   logger: Pick<LoggerService, 'warn' | 'error'>;
   fetch?: typeof globalThis.fetch;
+  /** Administrator-declared alarm-to-service bindings. Empty or absent: no service context is attached. */
+  serviceBindings?: readonly ServiceBinding[];
+  /** Read with the signed-in reader's own token, so catalog permissions decide what they see. */
+  catalog?: Pick<CatalogApi, 'getEntitiesByRefs'>;
+  catalogTimeoutMs?: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -89,17 +96,19 @@ export function createAwsAlertsRouter(options: AwsAlertsRouterOptions): express.
       const alerts = body.notifications.filter(isOwnAwsAlert);
       // Only scopes that came back from the user's own authorized page are looked up.
       const stored = await readDetails(store, alerts.map(scopeOf).filter((scope): scope is string => Boolean(scope)), logger);
+      const services = await readServices(options, credentials, [...stored.values()].map(row => row.details.alarmArn), logger);
       const notifications = alerts.map(row => {
         const scope = scopeOf(row);
         const details = scope ? stored.get(scope) : undefined;
         if (!details) return row;
+        const service = services?.get(details.details.alarmArn);
         return {
           ...row,
           payload: {
             ...row.payload,
             metadata: {
               ...(isRecord(row.payload.metadata) ? row.payload.metadata : {}),
-              [awsMetadataKey]: { ...details.details, updatedAt: details.updatedAt } as unknown as JsonValue,
+              [awsMetadataKey]: { ...details.details, updatedAt: details.updatedAt, ...(service ? { service } : {}) } as unknown as JsonValue,
             },
           },
         };
@@ -121,6 +130,33 @@ export function createAwsAlertsRouter(options: AwsAlertsRouterOptions): express.
     });
   });
   return router;
+}
+
+/**
+ * Service context for the alarm ARNs on this page, or `undefined` when no bindings are
+ * configured (the response is then unchanged from installs without this feature). Any
+ * catalog or token failure becomes an explicit `catalog-unavailable` state, never an error.
+ */
+async function readServices(
+  options: AwsAlertsRouterOptions,
+  credentials: Parameters<AwsAlertsRouterOptions['auth']['getPluginRequestToken']>[0]['onBehalfOf'],
+  alarmArns: string[],
+  logger: Pick<LoggerService, 'warn'>,
+): Promise<Map<string, AlertServiceContext> | undefined> {
+  const { serviceBindings, catalog } = options;
+  if (!serviceBindings?.length || !catalog) return undefined;
+  let token: string;
+  try {
+    ({ token } = await options.auth.getPluginRequestToken({ onBehalfOf: credentials, targetPluginId: 'catalog' }));
+  } catch {
+    logger.warn('Could not obtain a catalog token for AWS alert service context');
+    token = '';
+  }
+  // Without a token the catalog cannot be asked; every bound alert then reports that plainly.
+  const failing = { getEntitiesByRefs: async () => { throw new Error('no catalog token'); } };
+  const contexts = await resolveAlertServices({ alarmArns, bindings: serviceBindings, catalog: token ? catalog : failing, token, timeoutMs: options.catalogTimeoutMs ?? 5_000 });
+  if ([...contexts.values()].some(context => context.status === 'catalog-unavailable')) logger.warn('AWS alert service context could not be read from the catalog');
+  return contexts;
 }
 
 /** A detail lookup failure must not hide alerts: the native notifications still load. */

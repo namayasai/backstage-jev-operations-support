@@ -5,6 +5,7 @@ import type { BackstageCredentials } from '@backstage/backend-plugin-api';
 import { createAwsAlertsRouter } from './router';
 import type { AwsAlertDetailsStore, StoredAwsAlertDetails } from './store';
 import type { JevAwsAlertDetails } from './index';
+import type { ServiceBinding } from './serviceBindings';
 
 const ana = { principal: { type: 'user', userEntityRef: 'user:default/ana' } } as unknown as BackstageCredentials;
 const notificationsBaseUrl = 'http://backstage.internal/api/notifications';
@@ -59,6 +60,8 @@ function harness(options: {
   store?: AwsAlertDetailsStore & { read?: ReturnType<typeof vi.fn> };
   credentials?: () => Promise<BackstageCredentials>;
   respond?: (url: URL, init?: RequestInit) => Response;
+  serviceBindings?: ServiceBinding[];
+  catalog?: { getEntitiesByRefs: ReturnType<typeof vi.fn> };
 } = {}) {
   const store = options.store ?? memoryStore({ 'aws-cloudwatch:message-001': details() });
   const fetchCalls: Array<{ url: URL; init?: RequestInit }> = [];
@@ -72,6 +75,8 @@ function harness(options: {
     discovery: { getBaseUrl: async () => notificationsBaseUrl },
     store,
     logger,
+    serviceBindings: options.serviceBindings,
+    catalog: options.catalog as never,
     fetch: (async (input: string, init?: RequestInit) => {
       const url = new URL(String(input));
       fetchCalls.push({ url, init });
@@ -214,5 +219,34 @@ describe('AWS alert read endpoint', () => {
     expect(failure.body.error).toContain('HTTP 500');
     expect(garbage.status).toBe(502);
     expect(failing.logger.warn).toHaveBeenCalled();
+  });
+
+  it('attaches service context read with the reader\'s own catalog token, only when bindings are configured', async () => {
+    const arn = details().alarmArn;
+    const catalog = { getEntitiesByRefs: vi.fn(async ({ entityRefs }: { entityRefs: string[] }) => ({ items: entityRefs.map(() => undefined) })) };
+    const bound = harness({ catalog, serviceBindings: [{ entityRef: 'component:default/checkout', environment: 'production', alarmArns: [arn] }] });
+
+    const response = await request(bound.app).get('/aws-alerts');
+
+    expect(bound.getPluginRequestToken).toHaveBeenCalledWith({ onBehalfOf: ana, targetPluginId: 'catalog' });
+    expect(catalog.getEntitiesByRefs).toHaveBeenCalledWith(expect.objectContaining({ entityRefs: ['component:default/checkout'] }), { token: 'plugin-token-for-user:default/ana' });
+    // Not visible to this reader: reported as unavailable, with the configured ref withheld.
+    expect(response.body.notifications[0].payload.metadata.jevOperationsSupport.service).toEqual({ status: 'bound', services: [{ status: 'unavailable', environment: 'production' }] });
+    expect(JSON.stringify(response.body)).not.toContain('component:default/checkout');
+
+    const unconfigured = harness({ catalog });
+    const plain = await request(unconfigured.app).get('/aws-alerts');
+    expect(plain.body.notifications[0].payload.metadata.jevOperationsSupport.service).toBeUndefined();
+  });
+
+  it('still returns alerts when the catalog cannot be read for service context', async () => {
+    const catalog = { getEntitiesByRefs: vi.fn(async () => { throw new Error('catalog down'); }) };
+    const { app, logger } = harness({ catalog, serviceBindings: [{ entityRef: 'component:default/checkout', alarmArns: [details().alarmArn] }] });
+
+    const response = await request(app).get('/aws-alerts');
+
+    expect(response.status).toBe(200);
+    expect(response.body.notifications[0].payload.metadata.jevOperationsSupport.service).toEqual({ status: 'catalog-unavailable', count: 1 });
+    expect(logger.warn).toHaveBeenCalled();
   });
 });

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- AWS alerts: optional `jevOperationsSupport.awsNotifications.serviceBindings` bind exact alarm ARNs to a catalog entity and environment. The Alerts detail view shows the service, environment, owner, System, dependencies, and links, resolved at read time with the reader's own catalog permissions. No binding, catalog unavailable, entity not available to the reader, owner not set, and owner not loadable are distinct states. An inaccessible entity's ref is withheld. Nothing new is stored or sent to Jev. See [docs/aws-notifications.md](docs/aws-notifications.md#service-context).
+- Manual owner suggestion on an alert whose service belongs to one System now chooses among that System's related teams first. Every owner suggestion states which teams it could choose from and that other teams cannot be suggested.
+- New optional `AlertInbox` props: `loadSystemOwners` and `renderEntityLink`.
+
 ## 0.4.0 — 2026-09-20
 
 - Move manual incident reports into a dedicated Triage sidebar page. Add optional OpenAI, Claude, and OpenAI-compatible response suggestions after successful Jev incident assessment, including stored ALARM results. Keep Jev results available if suggestion generation fails. Name pre-check workflows by the task being checked.

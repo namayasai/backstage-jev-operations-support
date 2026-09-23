@@ -595,4 +595,99 @@ describe('AWS alert inbox: owner suggestion made at receipt', () => {
       expect(ownerErrorMessages[code], `missing a message for owner error code "${code}"`).toBeTruthy();
     }
   });
+
+  describe('service context', () => {
+    const checkout = {
+      status: 'available', entityRef: 'component:default/checkout', environment: 'production', kind: 'Component', title: 'Checkout', type: 'service', lifecycle: 'production',
+      system: 'system:default/shop', dependsOn: ['resource:default/orders-db'], owner: { status: 'resolved', entityRef: 'group:default/payments', title: 'Payments' },
+      links: [{ url: 'https://runbooks.example.com/checkout', title: 'Checkout runbook' }, { url: 'javascript:alert(1)', title: 'Injected' }],
+    };
+    function withService(service: unknown) {
+      return parseAlertNotificationPage({ totalCount: 1, notifications: [rawRow({}, { service })] });
+    }
+
+    it('shows the bound service, environment, owner, related entities, and only safe links', async () => {
+      const renderEntityLink = (ref: string, label: string) => <a href={`/catalog/${ref}`}>{label}</a>;
+      render(<AlertInbox loadNotifications={async () => withService({ status: 'bound', services: [checkout] })} evaluate={vi.fn()} renderEntityLink={renderEntityLink} pollMs={0} />);
+      // The row names the service and environment before the alert is opened.
+      expect(await screen.findByText('Checkout · production')).toBeTruthy();
+      await openAlert();
+      const section = await screen.findByRole('group', { name: 'Service' });
+      expect(within(section).getByRole('link', { name: 'Checkout' }).getAttribute('href')).toBe('/catalog/component:default/checkout');
+      expect(within(section).getByText('Environment: production')).toBeTruthy();
+      expect(within(section).getByRole('link', { name: 'Payments' })).toBeTruthy();
+      expect(within(section).getByRole('link', { name: 'system:default/shop' })).toBeTruthy();
+      expect(within(section).getByRole('link', { name: 'Checkout runbook' }).getAttribute('href')).toBe('https://runbooks.example.com/checkout');
+      expect(within(section).queryByText('Injected')).toBeNull();
+      expect(within(section).getByText(/do not establish the cause/)).toBeTruthy();
+    });
+
+    it('keeps unbound, catalog-unavailable, inaccessible, and ownerless states distinct', async () => {
+      const cases: [unknown, RegExp][] = [
+        [{ status: 'unbound' }, /No service is bound to this alarm ARN/],
+        [{ status: 'catalog-unavailable', count: 1 }, /the catalog could not be read just now/],
+        [{ status: 'bound', services: [{ status: 'unavailable', environment: 'production' }] }, /not available to you\. It may not exist, or you may not have access/],
+        [{ status: 'bound', services: [{ ...checkout, owner: { status: 'not-set' } }] }, /No owner is set in the catalog/],
+        [{ status: 'bound', services: [{ ...checkout, owner: { status: 'unavailable', entityRef: 'group:default/hidden' } }] }, /this owner could not be loaded/],
+      ];
+      for (const [service, expected] of cases) {
+        render(<AlertInbox loadNotifications={async () => withService(service)} evaluate={vi.fn()} pollMs={0} />);
+        await openAlert();
+        expect(within(await screen.findByRole('group', { name: 'Service' })).getByText(expected)).toBeTruthy();
+        cleanup();
+      }
+    });
+
+    it('says when an alarm is bound to several services instead of picking one', async () => {
+      render(<AlertInbox loadNotifications={async () => withService({ status: 'bound', services: [checkout, { ...checkout, entityRef: 'component:default/cart', title: 'Cart' }] })} evaluate={vi.fn()} pollMs={0} />);
+      expect(await screen.findByText('2 services')).toBeTruthy();
+      cleanup();
+      // Also when only one of the bound services is visible to this reader.
+      render(<AlertInbox loadNotifications={async () => withService({ status: 'bound', services: [checkout, { status: 'unavailable' }] })} evaluate={vi.fn()} pollMs={0} />);
+      expect(await screen.findByText('2 services')).toBeTruthy();
+      await openAlert();
+      expect(await screen.findByText(/bound to 2 services\. Which one is affected is not decided here/)).toBeTruthy();
+    });
+
+    it('drops a malformed service context and shows nothing rather than a guess', async () => {
+      render(<AlertInbox loadNotifications={async () => withService({ status: 'bound', services: [{ status: 'available' }] })} evaluate={vi.fn()} pollMs={0} />);
+      await openAlert();
+      await screen.findByText('Stored Jev result from receipt');
+      expect(screen.queryByRole('group', { name: 'Service' })).toBeNull();
+    });
+
+    it('narrows owner suggestion to teams around the service System and states the scope', async () => {
+      const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+      const loadOwners = vi.fn(async () => ownerGroups);
+      const loadSystemOwners = vi.fn(async () => [ownerGroups[1]]);
+      render(<AlertInbox loadNotifications={async () => withService({ status: 'bound', services: [{ ...checkout, owner: { status: 'not-set' } }] })} evaluate={evaluate} loadOwners={loadOwners} loadSystemOwners={loadSystemOwners} pollMs={0} />);
+      await openAlert();
+      fireEvent.click(await screen.findByRole('button', { name: 'Suggest owning team' }));
+      await screen.findByText('Suggested owner (not stored)');
+      expect(loadSystemOwners).toHaveBeenCalledWith('system:default/shop');
+      expect(loadOwners).not.toHaveBeenCalled();
+      expect(evaluate.mock.calls[0][0].candidates.map(candidate => candidate.entityRef)).toEqual(['group:default/payments']);
+      expect(screen.getByText(/Chosen among teams related to system:default\/shop.*Teams outside this list cannot be suggested\./)).toBeTruthy();
+      expect(screen.getByText('Show the 1 candidate team')).toBeTruthy();
+    });
+
+    it('falls back to the general team list, and says so, when the System has no related teams', async () => {
+      const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+      render(<AlertInbox loadNotifications={async () => withService({ status: 'bound', services: [checkout] })} evaluate={evaluate} loadOwners={async () => ownerGroups} loadSystemOwners={async () => []} pollMs={0} />);
+      await openAlert();
+      fireEvent.click(await screen.findByRole('button', { name: 'Suggest owning team' }));
+      expect(await screen.findByText(/No teams related to system:default\/shop were found, so this was chosen among the first 2 catalog teams/)).toBeTruthy();
+    });
+
+    it('states the candidate scope for a suggestion made without a service binding and for a stored one', async () => {
+      const evaluate = vi.fn(async (input: EvaluationRequest) => demoEvaluation(input));
+      const stored = demoEvaluation({ workflow: 'ownership', text: context, candidates: ownerGroups });
+      const notifications = parseAlertNotificationPage({ totalCount: 1, notifications: [rawRow({}, { ownerStatus: 'evaluated', ownerResult: stored, ownerCandidates: ownerGroups.map(({ id, title }) => ({ id, title })) })] });
+      render(<AlertInbox loadNotifications={async () => notifications} evaluate={evaluate} loadOwners={async () => ownerGroups} pollMs={0} />);
+      await openAlert();
+      expect(await screen.findByText(/Chosen at receipt among the 2 catalog teams sent then\. Teams outside this list cannot be suggested\./)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Re-suggest owning team' }));
+      expect(await screen.findByText(/^Chosen among the first 2 catalog teams in name order\./)).toBeTruthy();
+    });
+  });
 });

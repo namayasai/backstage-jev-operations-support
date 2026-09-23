@@ -32,7 +32,24 @@ export interface JevAwsAlertMetadata {
   /** The shortlist was shortened or had candidates dropped to fit the shared byte budget. */
   ownerShortened?: boolean;
   ownerErrorCode?: string;
+  /** Service context from `awsNotifications.serviceBindings`, resolved with the reader's own
+   * catalog permissions. Absent when the backend has no bindings configured. */
+  service?: AlertServiceContext;
 }
+
+export type AlertServiceOwner =
+  | { status: 'resolved'; entityRef: string; title?: string }
+  | { status: 'not-set' }
+  | { status: 'unavailable'; entityRef: string };
+
+export type AlertService =
+  | { status: 'available'; entityRef: string; environment?: string; kind: string; title?: string; description?: string; type?: string; lifecycle?: string; system?: string; dependsOn: string[]; owner: AlertServiceOwner; links: { url: string; title?: string }[] }
+  | { status: 'unavailable'; environment?: string };
+
+export type AlertServiceContext =
+  | { status: 'unbound' }
+  | { status: 'catalog-unavailable'; count: number }
+  | { status: 'bound'; services: AlertService[] };
 
 export interface AwsAlertNotification {
   id: string;
@@ -69,7 +86,12 @@ export interface AlertInboxProps {
   evaluate: (request: EvaluationRequest, options?: EvaluateOptions) => Promise<EvaluationResult>;
   /** Catalog teams to choose an owner from. Without it, no owner suggestion is offered. */
   loadOwners?: () => Promise<Candidate[]>;
+  /** Teams related to one catalog System (its owner and the owners of its parts). When the
+   * alert's service belongs to a System, owner suggestion chooses among these first. */
+  loadSystemOwners?: (systemRef: string) => Promise<Candidate[]>;
   renderCandidateLink?: (candidate: Candidate) => ReactNode;
+  /** Link to a catalog entity page; without it, entity refs are shown as plain text. */
+  renderEntityLink?: (entityRef: string, label: string) => ReactNode;
   /** How often the list is refreshed in the background; 0 turns it off. */
   pollMs?: number;
   /** Assess an active alarm that arrived without a Jev result as soon as it is opened. */
@@ -116,6 +138,56 @@ function isOwnerCandidateList(value: unknown): value is { id: string; title: str
   return Array.isArray(value) && value.length <= 20 && value.every(item => isRecord(item) && typeof item.id === 'string' && typeof item.title === 'string');
 }
 
+function stringList(value: unknown, max: number): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).slice(0, max) : [];
+}
+
+function optionalStrings<K extends string>(source: Record<string, unknown>, keys: readonly K[]): Partial<Record<K, string>> {
+  const out: Partial<Record<K, string>> = {};
+  for (const key of keys) { const value = stringValue(source[key]); if (value) out[key] = value; }
+  return out;
+}
+
+function parseOwner(value: unknown): AlertServiceOwner | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.status === 'not-set') return { status: 'not-set' };
+  const entityRef = stringValue(value.entityRef);
+  if (!entityRef) return undefined;
+  if (value.status === 'unavailable') return { status: 'unavailable', entityRef };
+  return value.status === 'resolved' ? { status: 'resolved', entityRef, ...optionalStrings(value, ['title'] as const) } : undefined;
+}
+
+/** Only absolute http(s) links are rendered, whatever the backend returned. */
+function parseLinks(value: unknown): { url: string; title?: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap(item => {
+    if (!isRecord(item) || typeof item.url !== 'string') return [];
+    try { const url = new URL(item.url); return url.protocol === 'https:' || url.protocol === 'http:' ? [{ url: url.toString(), ...optionalStrings(item, ['title'] as const) }] : []; }
+    catch { return []; }
+  }).slice(0, 20);
+}
+
+function parseService(value: unknown): AlertService | undefined {
+  if (!isRecord(value)) return undefined;
+  const env = optionalStrings(value, ['environment'] as const);
+  if (value.status === 'unavailable') return { status: 'unavailable', ...env };
+  const entityRef = stringValue(value.entityRef);
+  const kind = stringValue(value.kind);
+  const owner = parseOwner(value.owner);
+  if (value.status !== 'available' || !entityRef || !kind || !owner) return undefined;
+  return { status: 'available', entityRef, kind, ...env, ...optionalStrings(value, ['title', 'description', 'type', 'lifecycle', 'system'] as const), dependsOn: stringList(value.dependsOn, 10), owner, links: parseLinks(value.links) };
+}
+
+/** Best-effort: a malformed service context is dropped rather than shown as something it is not. */
+function parseServiceContext(value: unknown): AlertServiceContext | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.status === 'unbound') return { status: 'unbound' };
+  if (value.status === 'catalog-unavailable') return { status: 'catalog-unavailable', count: typeof value.count === 'number' && value.count > 0 ? Math.floor(value.count) : 1 };
+  if (value.status !== 'bound' || !Array.isArray(value.services)) return undefined;
+  const services = value.services.map(parseService).filter((service): service is AlertService => Boolean(service));
+  return services.length ? { status: 'bound', services } : undefined;
+}
+
 /** Parse the structured details the backend restored, or report them as unreadable. */
 function parseDetails(metadata: Record<string, unknown>): { metadata: JevAwsAlertMetadata; resultUnreadable: boolean; ownerResultUnreadable: boolean } | undefined {
   if (metadata.source !== 'aws-cloudwatch' || !alertStates.includes(metadata.awsState as AwsState) || !evaluationStatuses.includes(metadata.evaluationStatus as EvaluationStatus)) return undefined;
@@ -130,6 +202,7 @@ function parseDetails(metadata: Record<string, unknown>): { metadata: JevAwsAler
   const ownerStatus = evaluationStatuses.includes(metadata.ownerStatus as EvaluationStatus) ? (metadata.ownerStatus as EvaluationStatus) : undefined;
   const ownerResult = isOwnerResult(metadata.ownerResult) ? metadata.ownerResult : undefined;
   const ownerCandidates = isOwnerCandidateList(metadata.ownerCandidates) ? metadata.ownerCandidates : undefined;
+  const service = parseServiceContext(metadata.service);
   return {
     resultUnreadable: metadata.result !== undefined && !result,
     ownerResultUnreadable: metadata.ownerResult !== undefined && !ownerResult,
@@ -147,6 +220,7 @@ function parseDetails(metadata: Record<string, unknown>): { metadata: JevAwsAler
       ...(ownerCandidates ? { ownerCandidates } : {}),
       ...(metadata.ownerShortened === true ? { ownerShortened: true as const } : {}),
       ...(stringValue(metadata.ownerErrorCode) ? { ownerErrorCode: stringValue(metadata.ownerErrorCode) } : {}),
+      ...(service ? { service } : {}),
     },
   };
 }
@@ -258,6 +332,26 @@ function ownerChipLabel(metadata?: JevAwsAlertMetadata): string | undefined {
   return typeof title === 'string' && title.trim() ? `Owner: ${title}` : undefined;
 }
 
+/** List-row chip: the service when exactly one is bound and visible, a count when several are bound. */
+function serviceChipLabel(metadata?: JevAwsAlertMetadata): string | undefined {
+  const context = metadata?.service;
+  if (context?.status !== 'bound') return undefined;
+  if (context.services.length > 1) return `${context.services.length} services`;
+  const [service] = context.services;
+  return service.status === 'available' ? `${service.title ?? service.entityRef}${service.environment ? ` · ${service.environment}` : ''}` : undefined;
+}
+
+function teams(count: number): string {
+  return `${count} catalog team${count === 1 ? '' : 's'}`;
+}
+
+/** The one System an owner suggestion may be narrowed to: only when exactly one visible service names one. */
+function suggestionSystem(metadata: JevAwsAlertMetadata): string | undefined {
+  const context = metadata.service;
+  if (context?.status !== 'bound') return undefined;
+  const systems = new Set(context.services.flatMap(service => service.status === 'available' && service.system ? [service.system] : []));
+  return systems.size === 1 ? [...systems][0] : undefined;
+}
 
 const impactGroups = [
   { id: 'widespread', label: 'Widespread impact' },
@@ -294,10 +388,70 @@ const useStyles = makeStyles(theme => ({
   chips: { '& .MuiChip-root': { maxWidth: '100%' }, display: 'flex', gap: theme.spacing(0.5), flexWrap: 'wrap', marginTop: theme.spacing(0.5) },
   meta: { display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr)', gap: theme.spacing(0.5, 2), margin: 0, '& dd': { margin: 0, overflowWrap: 'anywhere' } },
   section: { marginTop: theme.spacing(3), '&:first-child': { marginTop: 0 } },
+  // Host themes may render anchors in body colour; catalog and runbook links must read as links.
+  links: { '& a': { color: theme.palette.primary.main, textDecoration: 'underline' } },
   actions: { display: 'flex', gap: theme.spacing(1), flexWrap: 'wrap', alignItems: 'center', marginTop: theme.spacing(2) },
   empty: { border: `1px dashed ${theme.palette.divider}`, borderRadius: theme.shape.borderRadius, padding: theme.spacing(3), textAlign: 'center' },
   pager: { display: 'flex', gap: theme.spacing(1), alignItems: 'center', justifyContent: 'flex-end', padding: theme.spacing(1, 2) },
 }));
+
+function EntityLabel({ entityRef, label, render }: { entityRef: string; label?: string; render?: (entityRef: string, label: string) => ReactNode }) {
+  const text = label ?? entityRef;
+  return <>{render ? render(entityRef, text) : <code>{text}</code>}</>;
+}
+
+function ownerLine(owner: AlertServiceOwner, render?: (entityRef: string, label: string) => ReactNode): ReactNode {
+  if (owner.status === 'resolved') return <EntityLabel entityRef={owner.entityRef} label={owner.title ?? owner.entityRef} render={render} />;
+  if (owner.status === 'not-set') return 'No owner is set in the catalog.';
+  return <><code>{owner.entityRef}</code> — this owner could not be loaded (it may not exist, or you may not have access).</>;
+}
+
+/**
+ * Service context from administrator bindings. Each state says exactly what is known:
+ * no binding, a catalog that could not be asked, or an entity this reader cannot load
+ * are different facts, and none of them is presented as "owner unknown".
+ */
+function ServiceSection({ context, renderEntityLink }: { context: AlertServiceContext; renderEntityLink?: (entityRef: string, label: string) => ReactNode }) {
+  const classes = useStyles();
+  let body: ReactNode;
+  if (context.status === 'unbound') body = <Typography variant="body2" color="textSecondary">No service is bound to this alarm ARN. An administrator can add it to <code>jevOperationsSupport.awsNotifications.serviceBindings</code>.</Typography>;
+  else if (context.status === 'catalog-unavailable') body = <Typography variant="body2" color="textSecondary">This alarm is bound to {context.count === 1 ? 'a service' : `${context.count} services`}, but the catalog could not be read just now. Refresh to try again.</Typography>;
+  else body = <>
+    {context.services.length > 1 && <Typography variant="body2" color="textSecondary" paragraph>This alarm is bound to {context.services.length} services. Which one is affected is not decided here.</Typography>}
+    {context.services.map((service, index) => service.status === 'unavailable'
+      ? <Typography key={index} variant="body2" color="textSecondary" paragraph>A service{service.environment ? ` in ${service.environment}` : ''} is bound to this alarm, but its catalog entity is not available to you. It may not exist, or you may not have access.</Typography>
+      : <Box key={service.entityRef} mb={2}>
+        <Typography variant="body1"><EntityLabel entityRef={service.entityRef} label={service.title ?? service.entityRef} render={renderEntityLink} /></Typography>
+        <div className={classes.chips}>
+          {service.environment && <Chip size="small" color="primary" variant="outlined" label={`Environment: ${service.environment}`} />}
+          <Chip size="small" variant="outlined" label={service.type ? `${service.kind} · ${service.type}` : service.kind} />
+          {service.lifecycle && <Chip size="small" variant="outlined" label={`Lifecycle: ${service.lifecycle}`} />}
+        </div>
+        {service.description && <Typography variant="body2" color="textSecondary" style={{ marginTop: 8 }}>{service.description}</Typography>}
+        <Typography variant="body2" component="dl" className={classes.meta} style={{ marginTop: 8 }}>
+          <dt>Owner</dt><dd>{ownerLine(service.owner, renderEntityLink)}</dd>
+          {service.system && <><dt>System</dt><dd><EntityLabel entityRef={service.system} render={renderEntityLink} /></dd></>}
+          {service.dependsOn.length > 0 && <><dt>Depends on</dt><dd>{service.dependsOn.map((ref, i) => <span key={ref}>{i > 0 && ', '}<EntityLabel entityRef={ref} render={renderEntityLink} /></span>)}</dd></>}
+          {service.links.length > 0 && <><dt>Links</dt><dd>{service.links.map((link, i) => <span key={link.url}>{i > 0 && ' · '}<a href={link.url} target="_blank" rel="noopener noreferrer">{link.title ?? link.url}</a></span>)}</dd></>}
+        </Typography>
+      </Box>)}
+    <Typography variant="caption" color="textSecondary" component="p">Catalog relations and links are context for investigation. They do not establish the cause or the current state of the service.</Typography>
+  </>;
+  return <div className={`${classes.section} ${classes.links}`} role="group" aria-label="Service">
+    <Typography variant="subtitle2" gutterBottom>Service</Typography>
+    {body}
+  </div>;
+}
+
+/** States plainly which teams a suggestion could choose from, and that no other team can be suggested. */
+function CandidateScope({ scope, candidates }: { scope: string; candidates: Pick<Candidate, 'id' | 'title'>[] }) {
+  return <Box mt={1}>
+    <Typography variant="caption" color="textSecondary" component="p">{scope} Teams outside this list cannot be suggested.</Typography>
+    <details><summary><Typography variant="caption" component="span">Show the {candidates.length} candidate team{candidates.length === 1 ? '' : 's'}</Typography></summary>
+      <Typography variant="caption" component="ul" style={{ margin: '4px 0 0', paddingLeft: 20 }}>{candidates.map(candidate => <li key={candidate.id}>{candidate.title}</li>)}</Typography>
+    </details>
+  </Box>;
+}
 
 function ResultSection({ label, result, candidates, renderCandidateLink, note }: { label: string; result: EvaluationResult; candidates?: Pick<Candidate, 'id' | 'title'>[]; renderCandidateLink?: (candidate: Candidate) => ReactNode; note?: string }) {
   const classes = useStyles();
@@ -315,7 +469,7 @@ function ResultSection({ label, result, candidates, renderCandidateLink, note }:
  * Alerts arrive on their own. The table keeps notification severity and Jev's interpretation
  * separate, and expands a detail view only after the reader selects an alert.
  */
-export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCandidateLink, pollMs = 30000, autoCheck = true, active = true, live: liveProp }: AlertInboxProps) {
+export function AlertInbox({ loadNotifications, evaluate, loadOwners, loadSystemOwners, renderCandidateLink, renderEntityLink, pollMs = 30000, autoCheck = true, active = true, live: liveProp }: AlertInboxProps) {
   const classes = useStyles();
   const limit = 20;
   const [offset, setOffset] = useState(0);
@@ -332,7 +486,7 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
   const [staleSelected, setStaleSelected] = useState<AwsAlertNotification>();
   const [rechecks, setRechecks] = useState<Record<string, EvaluationResult>>({});
   const [recheckErrors, setRecheckErrors] = useState<Record<string, string>>({});
-  const [owners, setOwners] = useState<Record<string, { result: EvaluationResult; candidates: Candidate[] }>>({});
+  const [owners, setOwners] = useState<Record<string, { result: EvaluationResult; candidates: Candidate[]; scope: string }>>({});
   const [ownerErrors, setOwnerErrors] = useState<Record<string, string>>({});
   const [checkingId, setCheckingId] = useState('');
   const [owningId, setOwningId] = useState('');
@@ -496,13 +650,25 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
     const controller = new AbortController();
     ownerControllerRef.current = controller;
     try {
-      const candidates = await loadOwners();
+      // Narrow to the teams around the service's System when there is one; otherwise, or when
+      // that System has no related teams, fall back to the general catalog team list.
+      const system = suggestionSystem(metadata);
+      let candidates: Candidate[] = [];
+      let scope = '';
+      if (system && loadSystemOwners) {
+        candidates = (await loadSystemOwners(system)).slice(0, 20);
+        scope = `Chosen among teams related to ${system} (its owner and the owners of its parts).`;
+      }
+      if (!candidates.length) {
+        candidates = await loadOwners();
+        scope = `${system && loadSystemOwners ? `No teams related to ${system} were found, so this was chosen` : 'Chosen'} among the first ${teams(candidates.length)} in name order.`;
+      }
       if (!candidates.length) throw new Error('The catalog returned no teams to choose from.');
       const request = evaluationRequestSchema.safeParse({ workflow: 'ownership', text: metadata.context, candidates });
       if (!request.success) throw new Error(`An owner cannot be suggested for this alert. ${request.error.issues.map(issue => issue.message).join(' ')}`);
       const result = await evaluate(request.data, { signal: controller.signal });
       if (!isEvaluationResult(result)) throw new Error('Jev returned a result that does not match the evaluation contract.');
-      if (generation === listGeneration.current) setOwners(current => ({ ...current, [id]: { result, candidates } }));
+      if (generation === listGeneration.current) setOwners(current => ({ ...current, [id]: { result, candidates, scope } }));
     } catch (reason) {
       if (controller.signal.aborted) return;
       if (generation === listGeneration.current) setOwnerErrors(current => ({ ...current, [id]: reason instanceof Error ? reason.message : 'Owner suggestion failed.' }));
@@ -572,6 +738,7 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
                   <div className={classes.chips}>
                     {arrived.has(notification.id) && <Chip size="small" color="primary" label="New" />}
                     {area && <Chip size="small" variant="outlined" label={`Look at: ${area}`} />}
+                    {serviceChipLabel(notification.metadata) && <Chip size="small" variant="outlined" label={serviceChipLabel(notification.metadata)} title={serviceChipLabel(notification.metadata)} />}
                     {ownerChipLabel(notification.metadata) && <Chip size="small" variant="outlined" label={ownerChipLabel(notification.metadata)} title={ownerChipLabel(notification.metadata)} />}
                     {checkingId === notification.id && <Chip size="small" variant="outlined" label="Assessing…" />}
                   </div>
@@ -597,6 +764,7 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
         <CardContent>
           {showingStale && <Typography variant="caption" color="textSecondary" role="status" component="p" style={{ marginBottom: 16 }}>This alert is no longer on this page of the inbox.</Typography>}
           {selected.metadata ? <>
+            {selected.metadata.service && <ServiceSection context={selected.metadata.service} renderEntityLink={renderEntityLink} />}
             {rechecks[selected.id] && <ResultSection label="Manual Jev re-check (not stored)" result={rechecks[selected.id]} />}
             {selected.metadata.result
               ? <ResultSection label="Stored Jev result from receipt" result={selected.metadata.result} />
@@ -605,10 +773,16 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
                   {!live && <Typography variant="body2" color="textSecondary">Choose Re-check with Jev to assess it now.</Typography>}
                 </>}
             {selected.metadata.ownerResult
-              ? <ResultSection label="Suggested owner from receipt" result={selected.metadata.ownerResult} candidates={selected.metadata.ownerCandidates} renderCandidateLink={renderCandidateLink} note={selected.metadata.ownerShortened ? 'shortened team descriptions were used' : undefined} />
+              ? <>
+                  <ResultSection label="Suggested owner from receipt" result={selected.metadata.ownerResult} candidates={selected.metadata.ownerCandidates} renderCandidateLink={renderCandidateLink} note={selected.metadata.ownerShortened ? 'shortened team descriptions were used' : undefined} />
+                  {selected.metadata.ownerCandidates?.length ? <CandidateScope scope={`Chosen at receipt among the ${teams(selected.metadata.ownerCandidates.length)} sent then.`} candidates={selected.metadata.ownerCandidates} /> : null}
+                </>
               : (selected.metadata.ownerStatus || selected.ownerResultUnreadable) && <Typography variant="body2" color="textSecondary">{ownerStatusNote(selected, selected.metadata)}</Typography>}
             {recheckErrors[selected.id] && <Alert severity="error" style={{ marginTop: 16 }}>{recheckErrors[selected.id]}</Alert>}
-            {owners[selected.id] && <ResultSection label="Suggested owner (not stored)" result={owners[selected.id].result} candidates={owners[selected.id].candidates} renderCandidateLink={renderCandidateLink} />}
+            {owners[selected.id] && <>
+              <ResultSection label="Suggested owner (not stored)" result={owners[selected.id].result} candidates={owners[selected.id].candidates} renderCandidateLink={renderCandidateLink} />
+              <CandidateScope scope={owners[selected.id].scope} candidates={owners[selected.id].candidates} />
+            </>}
             {ownerErrors[selected.id] && <Alert severity="error" style={{ marginTop: 16 }}>{ownerErrors[selected.id]}</Alert>}
             <div className={classes.actions}>
               <Button variant="contained" color="primary" size="small" disabled={busy} onClick={recheck}>{checkingId === selected.id ? 'Re-checking…' : checking ? 'Another re-check is running…' : 'Re-check with Jev'}</Button>

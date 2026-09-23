@@ -27,6 +27,7 @@ import { createJevClient, ProviderError } from '@namayasai/backstage-plugin-jev-
 import { awsAlertNotificationTopic } from './constants';
 import { createAwsAlertsRouter } from './router';
 import { createAwsAlertDetailsStore } from './store';
+import { readServiceBindings, type ServiceBinding } from './serviceBindings';
 
 export const awsAlertEventSubscriberId = 'jev-aws-cloudwatch-alerts';
 export { awsAlertNotificationTopic, awsAlertNotificationOrigin, awsMetadataKey } from './constants';
@@ -84,6 +85,8 @@ export type AwsAlertSettings = Readonly<{
   /** Root `jevOperationsSupport.demoMode`; automatic evaluation is disabled while it is on. */
   demoMode: boolean;
   ownerSuggestion: OwnerSuggestionSettings;
+  /** Exact alarm ARN → catalog entity bindings, applied when alerts are read (never sent to Jev). */
+  serviceBindings: ServiceBinding[];
 }>;
 
 export type AwsAlertEvaluationStatus = 'evaluated' | 'failed' | 'not-evaluated';
@@ -220,6 +223,7 @@ export function readAwsAlertSettings(config: Config): AwsAlertSettings | undefin
     confidenceThreshold,
     demoMode: config.getOptionalBoolean('jevOperationsSupport.demoMode') ?? false,
     ownerSuggestion,
+    serviceBindings: readServiceBindings(section),
   };
 }
 
@@ -660,6 +664,15 @@ export {
   type StoredAwsAlertDetails,
 } from './store';
 export {
+  bindingsForAlarm,
+  readServiceBindings,
+  resolveAlertServices,
+  type AlertService,
+  type AlertServiceContext,
+  type ServiceBinding,
+  type ServiceOwner,
+} from './serviceBindings';
+export {
   createAwsAlertsRouter,
   awsAlertsRoutePath,
   defaultAwsAlertPageLimit,
@@ -836,12 +849,20 @@ export const awsNotificationsModule = createBackendModule({
             }
           },
         });
-        httpRouter.use(createAwsAlertsRouter({ httpAuth, auth, discovery, store, logger }));
+        const catalogClient = new CatalogClient({ discoveryApi: discovery });
+        httpRouter.use(createAwsAlertsRouter({
+          httpAuth, auth, discovery, store, logger,
+          // Only consulted when bindings are configured; read on behalf of each reader.
+          serviceBindings: settings.serviceBindings,
+          catalog: catalogClient,
+          // Two sequential reads delay the alert list; keep each short so a slow catalog cannot stall it.
+          catalogTimeoutMs: Math.min(settings.timeoutMs, 5_000),
+        }));
         // Only built when the owner suggestion is enabled: an unconfigured or disabled
         // install never issues the catalog request that backs it.
         const loadGroups = settings.ownerSuggestion.enabled
           ? createOwnerGroupCache(
-            createOwnerGroupLoader(new CatalogClient({ discoveryApi: discovery }), auth, settings.ownerSuggestion.maxGroups, settings.timeoutMs, logger),
+            createOwnerGroupLoader(catalogClient, auth, settings.ownerSuggestion.maxGroups, settings.timeoutMs, logger),
             settings.ownerSuggestion.cacheSeconds,
             ownerGroupNegativeCacheSecondsFor(settings.timeoutMs),
           )

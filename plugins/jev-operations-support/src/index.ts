@@ -34,7 +34,7 @@ export const EntityJevOwnerSuggestionCard = jevPlugin.provide(createComponentExt
 export { JevWorkbench } from './Workbench';
 export type { WorkbenchProps, TechDocsOptions } from './Workbench';
 export { AlertInbox, categorizeAlert } from './AlertInbox';
-export type { AlertInboxProps, AlertNotificationPage, AwsAlertNotification, JevAwsAlertMetadata } from './AlertInbox';
+export type { AlertInboxProps, AlertNotificationPage, AlertService, AlertServiceContext, AlertServiceOwner, AwsAlertNotification, JevAwsAlertMetadata } from './AlertInbox';
 
 export { ReportTriage } from './ReportTriage';
 export type { ReportTriageProps } from './ReportTriage';
