@@ -332,14 +332,17 @@ function ownerChipLabel(metadata?: JevAwsAlertMetadata): string | undefined {
   return typeof title === 'string' && title.trim() ? `Owner: ${title}` : undefined;
 }
 
-/** List-row chip naming the bound service, when exactly one is visible to this reader. */
+/** List-row chip: the service when exactly one is bound and visible, a count when several are bound. */
 function serviceChipLabel(metadata?: JevAwsAlertMetadata): string | undefined {
   const context = metadata?.service;
   if (context?.status !== 'bound') return undefined;
-  const available = context.services.filter(service => service.status === 'available');
-  if (available.length !== 1 || available[0].status !== 'available') return context.services.length > 1 ? `${context.services.length} services` : undefined;
-  const [service] = available;
-  return `${service.title ?? service.entityRef}${service.environment ? ` · ${service.environment}` : ''}`;
+  if (context.services.length > 1) return `${context.services.length} services`;
+  const [service] = context.services;
+  return service.status === 'available' ? `${service.title ?? service.entityRef}${service.environment ? ` · ${service.environment}` : ''}` : undefined;
+}
+
+function teams(count: number): string {
+  return `${count} catalog team${count === 1 ? '' : 's'}`;
 }
 
 /** The one System an owner suggestion may be narrowed to: only when exactly one visible service names one. */
@@ -385,6 +388,8 @@ const useStyles = makeStyles(theme => ({
   chips: { '& .MuiChip-root': { maxWidth: '100%' }, display: 'flex', gap: theme.spacing(0.5), flexWrap: 'wrap', marginTop: theme.spacing(0.5) },
   meta: { display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr)', gap: theme.spacing(0.5, 2), margin: 0, '& dd': { margin: 0, overflowWrap: 'anywhere' } },
   section: { marginTop: theme.spacing(3), '&:first-child': { marginTop: 0 } },
+  // Host themes may render anchors in body colour; catalog and runbook links must read as links.
+  links: { '& a': { color: theme.palette.primary.main, textDecoration: 'underline' } },
   actions: { display: 'flex', gap: theme.spacing(1), flexWrap: 'wrap', alignItems: 'center', marginTop: theme.spacing(2) },
   empty: { border: `1px dashed ${theme.palette.divider}`, borderRadius: theme.shape.borderRadius, padding: theme.spacing(3), textAlign: 'center' },
   pager: { display: 'flex', gap: theme.spacing(1), alignItems: 'center', justifyContent: 'flex-end', padding: theme.spacing(1, 2) },
@@ -432,7 +437,7 @@ function ServiceSection({ context, renderEntityLink }: { context: AlertServiceCo
       </Box>)}
     <Typography variant="caption" color="textSecondary" component="p">Catalog relations and links are context for investigation. They do not establish the cause or the current state of the service.</Typography>
   </>;
-  return <div className={classes.section} role="group" aria-label="Service">
+  return <div className={`${classes.section} ${classes.links}`} role="group" aria-label="Service">
     <Typography variant="subtitle2" gutterBottom>Service</Typography>
     {body}
   </div>;
@@ -656,7 +661,7 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, loadSystem
       }
       if (!candidates.length) {
         candidates = await loadOwners();
-        scope = `${system && loadSystemOwners ? `No teams related to ${system} were found, so this was chosen` : 'Chosen'} among the first ${candidates.length} catalog teams in name order.`;
+        scope = `${system && loadSystemOwners ? `No teams related to ${system} were found, so this was chosen` : 'Chosen'} among the first ${teams(candidates.length)} in name order.`;
       }
       if (!candidates.length) throw new Error('The catalog returned no teams to choose from.');
       const request = evaluationRequestSchema.safeParse({ workflow: 'ownership', text: metadata.context, candidates });
@@ -770,7 +775,7 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, loadSystem
             {selected.metadata.ownerResult
               ? <>
                   <ResultSection label="Suggested owner from receipt" result={selected.metadata.ownerResult} candidates={selected.metadata.ownerCandidates} renderCandidateLink={renderCandidateLink} note={selected.metadata.ownerShortened ? 'shortened team descriptions were used' : undefined} />
-                  {selected.metadata.ownerCandidates?.length ? <CandidateScope scope={`Chosen at receipt among the ${selected.metadata.ownerCandidates.length} catalog teams sent then.`} candidates={selected.metadata.ownerCandidates} /> : null}
+                  {selected.metadata.ownerCandidates?.length ? <CandidateScope scope={`Chosen at receipt among the ${teams(selected.metadata.ownerCandidates.length)} sent then.`} candidates={selected.metadata.ownerCandidates} /> : null}
                 </>
               : (selected.metadata.ownerStatus || selected.ownerResultUnreadable) && <Typography variant="body2" color="textSecondary">{ownerStatusNote(selected, selected.metadata)}</Typography>}
             {recheckErrors[selected.id] && <Alert severity="error" style={{ marginTop: 16 }}>{recheckErrors[selected.id]}</Alert>}

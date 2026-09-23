@@ -641,6 +641,10 @@ describe('AWS alert inbox: owner suggestion made at receipt', () => {
     it('says when an alarm is bound to several services instead of picking one', async () => {
       render(<AlertInbox loadNotifications={async () => withService({ status: 'bound', services: [checkout, { ...checkout, entityRef: 'component:default/cart', title: 'Cart' }] })} evaluate={vi.fn()} pollMs={0} />);
       expect(await screen.findByText('2 services')).toBeTruthy();
+      cleanup();
+      // Also when only one of the bound services is visible to this reader.
+      render(<AlertInbox loadNotifications={async () => withService({ status: 'bound', services: [checkout, { status: 'unavailable' }] })} evaluate={vi.fn()} pollMs={0} />);
+      expect(await screen.findByText('2 services')).toBeTruthy();
       await openAlert();
       expect(await screen.findByText(/bound to 2 services\. Which one is affected is not decided here/)).toBeTruthy();
     });

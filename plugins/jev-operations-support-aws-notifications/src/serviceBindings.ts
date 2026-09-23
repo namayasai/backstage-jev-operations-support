@@ -133,13 +133,17 @@ function entityLinks(entity: Entity): { url: string; title?: string }[] {
   return links;
 }
 
-/** The owner ref named by the entity: the resolved `ownedBy` relation first, then `spec.owner`. */
+/**
+ * The owner ref named by the entity, or `undefined` when none is really set. A conventional
+ * placeholder such as `guests` still produces an `ownedBy` relation in the catalog, so
+ * `spec.owner` is checked with the shared `isUnownedOwner` rule first, the same rule the
+ * Tech Insights owner suggestion uses; the resolved relation is then preferred over parsing.
+ */
 function namedOwner(entity: Entity): string | undefined {
-  const related = relationTargets(entity, 'ownedBy')[0];
-  if (related) return related;
   const owner = typeof entity.spec?.owner === 'string' ? entity.spec.owner : '';
   if (isUnownedOwner(owner)) return undefined;
-  return safeRef(owner, { defaultKind: 'group', defaultNamespace: entity.metadata.namespace ?? 'default' });
+  return relationTargets(entity, 'ownedBy')[0]
+    ?? safeRef(owner, { defaultKind: 'group', defaultNamespace: entity.metadata.namespace ?? 'default' });
 }
 
 function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {

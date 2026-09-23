@@ -87,7 +87,8 @@ describe('alert service resolution', () => {
   });
 
   it('separates a missing owner from an owner the reader cannot load', async () => {
-    const unowned = entity('checkout', { relations: [], spec: { owner: 'unknown' } });
+    // The catalog still emits an ownedBy relation for a placeholder owner such as `guests`.
+    const unowned = entity('checkout', { relations: [{ type: 'ownedBy', targetRef: 'group:default/guests' }], spec: { owner: 'guests' } });
     const hiddenOwner = entity('cart', { relations: [], spec: { owner: 'secret-team' } });
     const reader = catalog({ 'component:default/checkout': unowned, 'component:default/cart': hiddenOwner });
     const contexts = await resolveAlertServices({ alarmArns: [sharedArn], bindings, catalog: reader, token: 't', timeoutMs: 1_000 });
