@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Triage shows Jev's assessment first. Response suggestions are generated only when the reader chooses **Generate response suggestions**, for the exact report and assessment on screen. Live and Check now no longer wait for, or call, the planning LLM. A plan is marked out of date after an edit, cleared by a new assessment, and cancelled when the page is left. Repeated clicks cannot start concurrent generations. The same on-demand action applies to a manual re-check in Alerts. Plans stored at AWS alarm receipt are unchanged.
+- Backend: the interactive `/evaluate` no longer attaches `responsePlan`. For incident assessments it returns a short-lived, per-user, in-memory `responsePlanRef`, and the new `POST /response-plan` accepts only that reference, never a browser-supplied result. See [docs/response-planning.md](docs/response-planning.md#how-a-manual-plan-is-requested). **Upgrade note:** a custom client that relied on `/evaluate` returning `responsePlan` must now call `/response-plan`.
+- New optional `ReportTriage`/`AlertInbox` prop `requestResponsePlan`.
+
 ## 0.4.0 — 2026-09-20
 
 - Move manual incident reports into a dedicated Triage sidebar page. Add optional OpenAI, Claude, and OpenAI-compatible response suggestions after successful Jev incident assessment, including stored ALARM results. Keep Jev results available if suggestion generation fails. Name pre-check workflows by the task being checked.

@@ -1,4 +1,5 @@
 import { attachResponsePlan, type ResponsePlanner } from './responsePlan';
+import { createResponsePlanRefs } from './responsePlanRefs';
 import crypto from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import express from 'express';
@@ -159,6 +160,7 @@ class WebhookTimeoutError extends Error {
 export function createRouter(options: RouterOptions): express.Router {
   const router = express.Router();
   const buckets = new Map<string, { count: number; reset: number }>();
+  const planRefs = createResponsePlanRefs();
   const deliveries = new Map<string, DeliveryEntry>();
   let inFlight = 0;
   let webhookInFlight = 0;
@@ -494,25 +496,47 @@ export function createRouter(options: RouterOptions): express.Router {
       lastChangeReviewOutcome,
     } } : {}),
   }));
+  /**
+   * Authenticates a signed-in user with the evaluate permission and takes one slot from their
+   * per-minute bucket. Answers the request itself and returns `undefined` when it may not proceed.
+   */
+  async function admit(req: express.Request, res: express.Response): Promise<string | undefined> {
+    const credentials = await options.httpAuth.credentials(req, { allow: ['user'] });
+    const [decision] = await options.permissions.authorize([{ permission: jevEvaluatePermission }], { credentials });
+    if (decision.result !== AuthorizeResult.ALLOW) { res.status(403).json({ error: 'You do not have permission to evaluate with Jev.' }); return undefined; }
+    const principal = credentials.principal;
+    if (principal.type !== 'user') { res.status(403).json({ error: 'A user identity is required.' }); return undefined; }
+    return principal.userEntityRef;
+  }
+  function takeSlot(key: string, res: express.Response): boolean {
+    const now = Date.now();
+    for (const [bucketKey, value] of buckets) if (value.reset <= now) buckets.delete(bucketKey);
+    if (!buckets.has(key) && buckets.size >= 1000) { res.status(429).json({ error: 'Evaluation capacity reached. Try again later.' }); return false; }
+    const bucket = buckets.get(key) ?? { count: 0, reset: now + 60000 };
+    if (bucket.count >= (options.requestsPerMinute ?? 10) || inFlight >= 4) {
+      res.setHeader('Retry-After', '60'); res.status(429).json({ error: 'Too many evaluations. Wait a minute before retrying.' }); return false;
+    }
+    bucket.count++; buckets.set(key, bucket);
+    return true;
+  }
+  /**
+   * Interactive assessments return Jev's result on its own. When a planner could use it, the
+   * result carries a short-lived reference so the reader can ask for response suggestions
+   * separately, instead of every check (including Live checks) waiting on a second provider.
+   */
+  function withPlanRef(user: string, text: string, result: EvaluationResult): EvaluationResult {
+    const planner = options.responsePlanner;
+    if (!planner || result.workflow !== 'incident' || (result.mode === 'demo' && planner.provider !== 'demo')) return result;
+    return { ...result, responsePlanRef: planRefs.issue(user, text, result) };
+  }
   router.post('/evaluate', async (req, res, next) => {
     try {
-      const credentials = await options.httpAuth.credentials(req, { allow: ['user'] });
-      const [decision] = await options.permissions.authorize([{ permission: jevEvaluatePermission }], { credentials });
-      if (decision.result !== AuthorizeResult.ALLOW) { res.status(403).json({ error: 'You do not have permission to evaluate with Jev.' }); return; }
+      const user = await admit(req, res);
+      if (!user) return;
       const parsed = evaluationRequestSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: parsed.error.issues.map(i => i.message).join(' ') }); return; }
-      const now = Date.now();
-      for (const [key, value] of buckets) if (value.reset <= now) buckets.delete(key);
-      const principal = credentials.principal;
-      if (principal.type !== 'user') { res.status(403).json({ error: 'A user identity is required.' }); return; }
-      const key = principal.userEntityRef;
-      if (!buckets.has(key) && buckets.size >= 1000) { res.status(429).json({ error: 'Evaluation capacity reached. Try again later.' }); return; }
-      const bucket = buckets.get(key) ?? { count: 0, reset: now + 60000 };
-      if (bucket.count >= (options.requestsPerMinute ?? 10) || inFlight >= 4) {
-        res.setHeader('Retry-After', '60'); res.status(429).json({ error: 'Too many evaluations. Wait a minute before retrying.' }); return;
-      }
-      bucket.count++; buckets.set(key, bucket);
-      if (options.demoMode) { res.json(await attachResponsePlan(parsed.data.text, demoEvaluation(parsed.data), options.responsePlanner)); return; }
+      if (!takeSlot(user, res)) return;
+      if (options.demoMode) { res.json(withPlanRef(user, parsed.data.text, demoEvaluation(parsed.data))); return; }
       if (!options.evaluate) { res.status(503).json({ error: 'Jev is not configured. Set jevOperationsSupport.apiKey in the backend.' }); return; }
       inFlight++;
       const controller = new AbortController();
@@ -521,11 +545,34 @@ export function createRouter(options: RouterOptions): express.Router {
       try {
         const { request, checks } = buildEvaluation(parsed.data);
         const response = await options.evaluate(request, controller.signal);
-        const result = summarize(parsed.data, response, checks, options.confidenceThreshold);
-        res.json(await attachResponsePlan(parsed.data.text, result, options.responsePlanner, controller.signal));
+        res.json(withPlanRef(user, parsed.data.text, summarize(parsed.data, response, checks, options.confidenceThreshold)));
       } finally { res.removeListener('close', disconnected); inFlight--; }
     } catch (error) {
       if (error instanceof ProviderError) { res.status(error.status).json({ error: error.message }); return; }
+      next(error);
+    }
+  });
+  const planRefPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  router.post('/response-plan', async (req, res, next) => {
+    try {
+      const user = await admit(req, res);
+      if (!user) return;
+      const planner = options.responsePlanner;
+      if (!planner) { res.status(503).json({ error: 'Response planning is not configured on this backend.' }); return; }
+      const ref: unknown = req.body?.ref;
+      if (typeof ref !== 'string' || !planRefPattern.test(ref) || Object.keys(req.body).length !== 1) { res.status(400).json({ error: 'A response-plan reference from a recent assessment is required.' }); return; }
+      const claim = planRefs.claim(user, ref);
+      if (claim.status === 'missing') { res.status(404).json({ error: 'This assessment is no longer available for response suggestions. Check the report again.' }); return; }
+      if (claim.status === 'busy') { res.status(409).json({ error: 'Response suggestions for this assessment are already being generated.' }); return; }
+      const controller = new AbortController();
+      const disconnected = () => { if (!res.writableEnded) controller.abort(); };
+      res.once('close', disconnected);
+      try {
+        if (!takeSlot(user, res)) return;
+        const planned = await attachResponsePlan(claim.text, claim.result, planner, controller.signal);
+        res.json(planned.responsePlan ?? { status: 'failed', provider: planner.provider, model: planner.model, code: 'unavailable' });
+      } finally { res.removeListener('close', disconnected); claim.release(); }
+    } catch (error) {
       next(error);
     }
   });

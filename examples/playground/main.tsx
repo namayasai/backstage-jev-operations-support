@@ -8,6 +8,15 @@ import { ReportTriage } from '../../plugins/jev-operations-support/src/ReportTri
 import { AlertInbox, parseAlertNotificationPage } from '../../plugins/jev-operations-support/src/AlertInbox';
 
 const evaluate = async (input: EvaluationRequest) => demoEvaluation(input);
+// Incident assessments carry a reference, as the backend issues when response planning is configured.
+const triageEvaluate = async (input: EvaluationRequest) => ({ ...demoEvaluation(input), responsePlanRef: { id: crypto.randomUUID(), expiresAt: new Date(Date.now() + 900000).toISOString() } });
+const requestResponsePlan = async () => ({ status: 'generated', provider: 'demo', model: 'illustrative-response-plan', mode: 'demo', generatedAt: new Date().toISOString(), plan: {
+  summary: 'Illustrative response suggestions. This fixed example does not analyze your input.',
+  hypotheses: [{ cause: 'A recent change is a possible investigation lead.', evidence: 'This demo has not verified evidence of a cause.', verification: 'Compare the incident timeline with change history.' }],
+  checks: ['Confirm which operations and customers are affected.'],
+  actions: [],
+  unknowns: ['The cause and affected environment remain unverified.'],
+} });
 const incident = (text: string) => demoEvaluation({ workflow: 'incident', text, candidates: [] });
 const alert = (id: string, title: string, description: string, context: string, minutesAgo: number, details: Record<string, unknown> = {}) => ({
   id, created: new Date(Date.now() - minutesAgo * 60000).toISOString(),
@@ -48,7 +57,7 @@ function Playground() {
         <Tab value="playground" label="Pre-check" id="jev-tab-playground" aria-controls="jev-tabpanel-playground" />
       </Tabs>
       <div hidden={view !== 'alerts'} role="tabpanel" id="jev-tabpanel-alerts" aria-labelledby="jev-tab-alerts"><AlertInbox loadNotifications={loadNotifications} evaluate={evaluate} pollMs={0} active={view === 'alerts'} /></div>
-      <div hidden={view !== 'triage'} role="tabpanel" id="jev-tabpanel-triage" aria-labelledby="jev-tab-triage"><ReportTriage evaluate={evaluate} active={view === 'triage'} /></div>
+      <div hidden={view !== 'triage'} role="tabpanel" id="jev-tabpanel-triage" aria-labelledby="jev-tab-triage"><ReportTriage evaluate={triageEvaluate} requestResponsePlan={requestResponsePlan} active={view === 'triage'} /></div>
       <div hidden={view !== 'playground'} role="tabpanel" id="jev-tabpanel-playground" aria-labelledby="jev-tab-playground"><JevWorkbench demo evaluate={evaluate} workflowIds={['readiness', 'change-risk', 'templates', 'ownership', 'search']} initialText={sampleText.readiness} active={view === 'playground'} /></div>
     </Box>
   </UnifiedThemeProvider>;

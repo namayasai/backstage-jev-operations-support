@@ -61,3 +61,19 @@ export function useJevEvaluate(): (request: EvaluationRequest, options?: Evaluat
     catch { throw new Error('Evaluation returned a non-JSON response.'); }
   }, [discovery, fetchApi]);
 }
+
+/**
+ * Asks the backend for response suggestions for one earlier assessment, identified only by the
+ * short-lived reference the backend issued with it. The response is validated where it is shown.
+ */
+export function useJevResponsePlan(): (ref: string, options?: EvaluateOptions) => Promise<unknown> {
+  const discovery = useApi(discoveryApiRef);
+  const fetchApi = useApi(fetchApiRef);
+  return useCallback(async (ref: string, options?: EvaluateOptions): Promise<unknown> => {
+    const url = await discovery.getBaseUrl('jev-operations-support');
+    const response = await fetchApi.fetch(`${url}/response-plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ref }), signal: options?.signal });
+    if (!response.ok) throw await responseError(response, 'Response suggestions could not be generated');
+    try { return await response.json(); }
+    catch { throw new Error('Response suggestions returned a non-JSON response.'); }
+  }, [discovery, fetchApi]);
+}

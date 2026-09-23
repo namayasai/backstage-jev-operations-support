@@ -155,6 +155,9 @@ export type EvaluationResult = {
   workflow: WorkflowId; model: string; evaluatedAt: string; mode: 'live' | 'demo';
   findings: Finding[]; needsReview: boolean;
   responsePlan?: ResponsePlanOutcome;
+  /** Short-lived reference to this assessment, issued by the backend's interactive `/evaluate`
+   * when response planning is configured; `/response-plan` accepts only this, never a result. */
+  responsePlanRef?: { id: string; expiresAt: string };
 };
 
 /**

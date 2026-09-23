@@ -3,7 +3,7 @@ import { Box, Button, Card, CardContent, CardHeader, Chip, Divider, FormControlL
 import { Alert } from '@material-ui/lab';
 import { evaluationRequestSchema, type Candidate, type EvaluationRequest, type EvaluationResult } from '@namayasai/backstage-plugin-jev-operations-support-common';
 import { isEvaluationResult } from './evaluationResult';
-import { ResponsePlanPanel } from './ResponsePlan';
+import { ResponsePlanSection, type RequestResponsePlan } from './ResponsePlan';
 import { FindingList } from './Findings';
 import { useLivePreference, type EvaluateOptions } from './useLiveEvaluation';
 
@@ -67,6 +67,8 @@ export interface AlertNotificationPage {
 export interface AlertInboxProps {
   loadNotifications: (offset: number, limit: number) => Promise<AlertNotificationPage>;
   evaluate: (request: EvaluationRequest, options?: EvaluateOptions) => Promise<EvaluationResult>;
+  /** Generates response suggestions for a manual re-check on request. Stored receipt results keep their own plan. */
+  requestResponsePlan?: RequestResponsePlan;
   /** Catalog teams to choose an owner from. Without it, no owner suggestion is offered. */
   loadOwners?: () => Promise<Candidate[]>;
   renderCandidateLink?: (candidate: Candidate) => ReactNode;
@@ -299,7 +301,7 @@ const useStyles = makeStyles(theme => ({
   pager: { display: 'flex', gap: theme.spacing(1), alignItems: 'center', justifyContent: 'flex-end', padding: theme.spacing(1, 2) },
 }));
 
-function ResultSection({ label, result, candidates, renderCandidateLink, note }: { label: string; result: EvaluationResult; candidates?: Pick<Candidate, 'id' | 'title'>[]; renderCandidateLink?: (candidate: Candidate) => ReactNode; note?: string }) {
+function ResultSection({ label, result, candidates, renderCandidateLink, note, requestPlan }: { label: string; result: EvaluationResult; candidates?: Pick<Candidate, 'id' | 'title'>[]; renderCandidateLink?: (candidate: Candidate) => ReactNode; note?: string; requestPlan?: RequestResponsePlan }) {
   const classes = useStyles();
   return <div className={classes.section} role="group" aria-label={label}>
     <Box display="flex" justifyContent="space-between" alignItems="baseline" flexWrap="wrap" mb={1}>
@@ -307,7 +309,7 @@ function ResultSection({ label, result, candidates, renderCandidateLink, note }:
       <Typography variant="caption" color="textSecondary">{result.mode === 'demo' ? 'ILLUSTRATIVE RESULT' : result.model} · {instantLabel(result.evaluatedAt)}{note ? ` · ${note}` : ''}</Typography>
     </Box>
     <FindingList findings={result.findings} candidates={candidates} renderCandidateLink={renderCandidateLink} headingLevel="h4" />
-    {result.workflow === 'incident' && <ResponsePlanPanel value={result.responsePlan} />}
+    {result.workflow === 'incident' && <ResponsePlanSection result={result} requestPlan={requestPlan} />}
   </div>;
 }
 
@@ -315,7 +317,7 @@ function ResultSection({ label, result, candidates, renderCandidateLink, note }:
  * Alerts arrive on their own. The table keeps notification severity and Jev's interpretation
  * separate, and expands a detail view only after the reader selects an alert.
  */
-export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCandidateLink, pollMs = 30000, autoCheck = true, active = true, live: liveProp }: AlertInboxProps) {
+export function AlertInbox({ loadNotifications, evaluate, requestResponsePlan, loadOwners, renderCandidateLink, pollMs = 30000, autoCheck = true, active = true, live: liveProp }: AlertInboxProps) {
   const classes = useStyles();
   const limit = 20;
   const [offset, setOffset] = useState(0);
@@ -597,7 +599,7 @@ export function AlertInbox({ loadNotifications, evaluate, loadOwners, renderCand
         <CardContent>
           {showingStale && <Typography variant="caption" color="textSecondary" role="status" component="p" style={{ marginBottom: 16 }}>This alert is no longer on this page of the inbox.</Typography>}
           {selected.metadata ? <>
-            {rechecks[selected.id] && <ResultSection label="Manual Jev re-check (not stored)" result={rechecks[selected.id]} />}
+            {rechecks[selected.id] && <ResultSection label="Manual Jev re-check (not stored)" result={rechecks[selected.id]} requestPlan={requestResponsePlan} />}
             {selected.metadata.result
               ? <ResultSection label="Stored Jev result from receipt" result={selected.metadata.result} />
               : <>
